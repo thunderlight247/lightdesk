@@ -1,0 +1,215 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum BusinessStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum ProfileStatus {
+  DRAFT
+  REVIEW_REQUIRED
+  ACTIVE
+  SUSPENDED
+}
+
+enum ProfileModule {
+  IDENTITY
+  OFFERINGS
+  COMMUNICATION
+  POLICY
+  PERMISSION
+}
+
+enum ReviewState {
+  DRAFT
+  APPROVED
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model User {
+  id              String     @id @default(cuid())
+  email           String     @unique // always stored lowercase (CHECK in migration 2)
+  name            String
+  passwordHash    String
+  status          UserStatus @default(ACTIVE)
+  isPlatformAdmin Boolean    @default(false)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  sessions            Session[]
+  memberships         BusinessMembership[]
+  invitationsSent     Invitation[]         @relation("InvitationInviter")
+  invitationsAccepted Invitation[]         @relation("InvitationAcceptor")
+  auditEvents         AuditEvent[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique // sha256 hex of the cookie token; plaintext never stored
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Business {
+  id        String         @id @default(cuid())
+  name      String
+  slug        String         @unique
+  description String? // M1: optional, <=500 chars (CHECK)
+  location    String? // M1: optional free text, <=120 chars (CHECK)
+  status      BusinessStatus @default(ACTIVE)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  memberships BusinessMembership[]
+  invitations Invitation[]
+  auditEvents AuditEvent[]
+  profile     BusinessProfile?
+}
+
+model BusinessMembership {
+  id         String         @id @default(cuid())
+  businessId String
+  userId     String
+  role       MembershipRole
+  createdAt  DateTime       @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, userId])
+  @@index([userId])
+}
+
+model Invitation {
+  id           String         @id @default(cuid())
+  businessId   String
+  email        String // lowercase (CHECK in migration 2)
+  role         MembershipRole
+  tokenHash    String         @unique // sha256 hex; plaintext token is shown once and never stored
+  invitedById  String
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  acceptedById String?
+  revokedAt    DateTime?
+  createdAt    DateTime       @default(now())
+
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  invitedBy  User     @relation("InvitationInviter", fields: [invitedById], references: [id], onDelete: Restrict)
+  acceptedBy User?    @relation("InvitationAcceptor", fields: [acceptedById], references: [id], onDelete: Restrict)
+
+  @@index([businessId])
+  @@index([email])
+  @@index([invitedById])
+  @@index([acceptedById])
+}
+
+model AuditEvent {
+  id          String   @id @default(cuid())
+  businessId  String?
+  actorUserId String?
+  action      String
+  targetType  String?
+  targetId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  business Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  actor    User?     @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action])
+}
+
+// ---- M2: Business Intelligence Profile --------------------------------------------------
+// One profile per business. Lifecycle status lives here; content lives in ProfileEntry
+// (keyed, validated singletons) and FaqEntry (repeatable knowledge). Every content row keeps
+// its working value AND its last approved value; consumers read only approved values.
+model BusinessProfile {
+  id                String        @id @default(cuid())
+  businessId        String        @unique
+  status            ProfileStatus @default(DRAFT)
+  revision          Int           @default(1)
+  statusChangedAt   DateTime      @default(now())
+  statusChangedById String?
+  statusReason      String? // required while SUSPENDED (CHECK)
+  activatedAt       DateTime?
+  createdById       String
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  entries  ProfileEntry[]
+  faqs     FaqEntry[]
+}
+
+model ProfileEntry {
+  id            String        @id @default(cuid())
+  profileId     String
+  module        ProfileModule
+  key           String
+  value         String // working value (what the editor last saved)
+  approvedValue String? // last approved value; null = never approved
+  state         ReviewState   @default(DRAFT)
+  revision      Int           @default(1)
+  createdById   String
+  updatedById   String
+  approvedById  String?
+  approvedAt    DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  profile BusinessProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, module, key])
+  @@index([profileId])
+}
+
+model FaqEntry {
+  id                 String      @id @default(cuid())
+  profileId          String
+  question           String
+  answer             String
+  category           String?
+  normalizedQuestion String
+  isActive           Boolean     @default(true)
+  state              ReviewState @default(DRAFT)
+  approvedQuestion   String?
+  approvedAnswer     String?
+  approvedCategory   String?
+  revision           Int         @default(1)
+  createdById        String
+  updatedById        String
+  approvedById       String?
+  approvedAt         DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  profile BusinessProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, normalizedQuestion])
+  @@index([profileId, isActive])
+}

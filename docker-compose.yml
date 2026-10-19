@@ -1,0 +1,15 @@
+# Development-only PostgreSQL. Credentials here are throwaway local values.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: lightdesk
+      POSTGRES_PASSWORD: lightdesk_dev_only
+      POSTGRES_DB: lightdesk
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - lightdesk_pg:/var/lib/postgresql/data
+      - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+volumes:
+  lightdesk_pg:
