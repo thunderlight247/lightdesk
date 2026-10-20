@@ -810,6 +810,14 @@ continue only with the next explicitly requested task.
 
 ## 15. Change log
 
+-   **2026-10-20 (Pre-M6 UI/UX redesign):** Professional redesign pass across the workspace UI to
+    prepare for M6 integration. Added a shared design system (brand color tokens, `Card`, `Chip`,
+    `PageHeading`, variant-aware `Button`, focus-ring form controls, pill navigation, sticky header,
+    loading/error states). Restructured the lab conversation page as a chat transcript where draft
+    review is a distinct "Review & approve" panel — deliberately shaped as the future M6
+    review-and-send surface for WhatsApp, with simulation-only notices kept verbatim. Catalogue items
+    are now scannable cards with state/stock chips. No actions, validation, permissions, or service
+    logic changed; all 67 unit + 150 integration tests, typecheck, lint, and production build pass.
 -   **Initial project handoff:** Consolidated LightDesk's product idea,
     architecture principles, AI-provider direction, WhatsApp strategy,
     hosting evaluation, milestone roadmap, and collaboration rules.

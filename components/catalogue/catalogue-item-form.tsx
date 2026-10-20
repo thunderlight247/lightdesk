@@ -97,16 +97,16 @@ export function CatalogueItemForm({
         </Field>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
         <input
           id={`stock-${rev}`}
           type="checkbox"
           name="inStock"
           value="true"
           defaultChecked={item ? item.inStock : true}
-          className="h-4 w-4 rounded border-neutral-300"
+          className="h-4 w-4 rounded border-zinc-300 text-brand-600 focus:ring-brand-500"
         />
-        <label htmlFor={`stock-${rev}`} className="text-sm font-medium text-neutral-800">
+        <label htmlFor={`stock-${rev}`} className="text-sm font-medium text-zinc-800">
           Currently in stock / available
         </label>
       </div>

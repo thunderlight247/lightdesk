@@ -32,34 +32,45 @@ export default async function BusinessLayout({
 
   return (
     <div>
-      <div className="mb-6 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-wide text-neutral-500">Business workspace</p>
-            <p className="break-words text-lg font-semibold">{membership.business.name}</p>
+            <p className="text-xs uppercase tracking-wide text-zinc-500">Business workspace</p>
+            <p className="break-words text-lg font-semibold tracking-tight text-zinc-900">{membership.business.name}</p>
           </div>
-          <RoleBadge role={membership.role} />
+          {businesses.length > 1 && (
+            <details className="relative text-sm">
+              <summary className="cursor-pointer rounded-lg border border-zinc-300 px-3 py-1.5 text-zinc-700 shadow-sm transition-colors hover:border-zinc-400 hover:bg-zinc-50">
+                Switch business
+              </summary>
+              <ul className="mt-1 divide-y rounded-lg border border-zinc-200 bg-white shadow-sm">
+                {businesses.map((b) => (
+                  <li key={b.id}>
+                    <Link
+                      href={`/businesses/${b.id}`}
+                      aria-current={b.id === membership.businessId ? "true" : undefined}
+                      className={`flex items-center justify-between gap-2 px-3 py-2 transition-colors hover:bg-zinc-50 ${
+                        b.id === membership.businessId ? "font-medium text-brand-800" : ""
+                      }`}
+                    >
+                      <span>{b.name}</span>
+                      <RoleBadge role={b.role} />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {businesses.length <= 1 && <RoleBadge role={membership.role} />}
         </div>
-        {businesses.length > 1 && (
-          <details className="text-sm">
-            <summary className="cursor-pointer underline">Switch business</summary>
-            <ul className="mt-2 divide-y rounded-md border bg-white">
-              {businesses.map((b) => (
-                <li key={b.id}>
-                  <Link
-                    href={`/businesses/${b.id}`}
-                    aria-current={b.id === membership.businessId ? "true" : undefined}
-                    className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-neutral-50"
-                  >
-                    <span>{b.name}</span>
-                    <RoleBadge role={b.role} />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-        <BusinessNav items={items} />
+        <div className="flex flex-wrap items-center gap-3">
+          <BusinessNav items={items} />
+          {businesses.length > 1 && (
+            <div className="ml-auto hidden sm:block">
+              <RoleBadge role={membership.role} />
+            </div>
+          )}
+        </div>
       </div>
       {children}
     </div>

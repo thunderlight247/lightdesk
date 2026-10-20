@@ -1,22 +1,22 @@
 import type { DraftStatus } from "@/modules/lab/types";
+import { Chip } from "@/components/ui/field";
 
-const RESULT: Record<DraftStatus, { label: string; cls: string }> = {
-  answerable: { label: "Answerable from approved information", cls: "bg-green-100 text-green-900" },
-  needs_information: { label: "Needs information", cls: "bg-amber-100 text-amber-900" },
-  conflict_detected: { label: "Conflict detected", cls: "bg-red-100 text-red-900" },
-  escalation_required: { label: "Human attention recommended", cls: "bg-red-100 text-red-900" },
+const RESULT: Record<DraftStatus, { label: string; tone: "success" | "warning" | "danger" }> = {
+  answerable: { label: "Answerable from approved information", tone: "success" },
+  needs_information: { label: "Needs information", tone: "warning" },
+  conflict_detected: { label: "Conflict detected", tone: "danger" },
+  escalation_required: { label: "Human attention recommended", tone: "danger" },
 };
 
 export function ResultBadge({ status }: { status: DraftStatus }) {
-  const r = RESULT[status];
-  return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${r.cls}`}>{r.label}</span>;
+  return <Chip tone={RESULT[status].tone}>{RESULT[status].label}</Chip>;
 }
 
 export function ConversationStatusBadge({ status }: { status: "ACTIVE" | "ESCALATED" | "RESOLVED" }) {
   const map = {
-    ACTIVE: ["Active", "bg-neutral-100 text-neutral-800"],
-    ESCALATED: ["Needs human follow-up", "bg-red-100 text-red-900"],
-    RESOLVED: ["Resolved", "bg-green-100 text-green-900"],
+    ACTIVE: ["Active", "neutral"],
+    ESCALATED: ["Needs human follow-up", "danger"],
+    RESOLVED: ["Resolved", "success"],
   } as const;
-  return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${map[status][1]}`}>{map[status][0]}</span>;
+  return <Chip tone={map[status][1]}>{map[status][0]}</Chip>;
 }

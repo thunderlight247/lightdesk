@@ -1,3 +1,33 @@
 @import "tailwindcss";
 
-body { @apply bg-neutral-50 text-neutral-900 antialiased; }
+@theme {
+  /* LightDesk brand scale — used for primary actions, active navigation and focus states. */
+  --color-brand-50: #eef1fd;
+  --color-brand-100: #dfe6fb;
+  --color-brand-200: #c3cef6;
+  --color-brand-300: #9fafef;
+  --color-brand-400: #7a8ce8;
+  --color-brand-500: #5b6fde;
+  --color-brand-600: #4357c8;
+  --color-brand-700: #3646a2;
+  --color-brand-800: #2c3880;
+  --color-brand-900: #26305f;
+}
+
+body {
+  @apply bg-zinc-50 text-zinc-900 antialiased;
+}
+
+::selection {
+  background-color: var(--color-brand-100);
+}
+
+/* Shared surface style so cards are consistent without repeating utility strings. */
+@utility card {
+  @apply rounded-xl border border-zinc-200 bg-white shadow-sm;
+}
+
+/* Horizontally scrollable pill nav bar (mobile-friendly). */
+@utility nav-scroll {
+  @apply flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none];
+}

@@ -1,10 +1,11 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { NewConversationForm } from "@/components/lab/new-conversation-form";
 import { ConversationStatusBadge } from "@/components/lab/badges";
 import { fmtDateTime } from "@/components/profile/format";
-import { Alert } from "@/components/ui/field";
+import { PageHeading } from "@/components/ui/card";
+import { Alert, Chip } from "@/components/ui/field";
 import { businessIdSchema } from "@/lib/validation/schemas";
-import { notFound } from "next/navigation";
 import { orNotFound, requireUserForPage } from "@/lib/auth/guards";
 import { getLabReadiness, listConversations } from "@/modules/lab/service";
 import { SIMULATION_NOTICE } from "@/modules/lab/types";
@@ -23,21 +24,25 @@ export default async function LabPage({ params }: { params: Promise<{ businessId
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="mb-1 text-xl font-semibold">Conversation lab</h1>
-        <p className="text-sm text-neutral-600">
-          Try fictional customer enquiries and see how LightDesk would draft a reply from your <em>approved</em> business profile.
-          {" "}{SIMULATION_NOTICE} Nothing is delivered through WhatsApp or any other channel.
-        </p>
-      </div>
+      <PageHeading
+        title="Conversation lab"
+        lead={
+          <>
+            Try fictional customer enquiries and see how LightDesk would draft a reply from your <em>approved</em> business profile.{" "}
+            {SIMULATION_NOTICE} Nothing is delivered through WhatsApp or any other channel.
+          </>
+        }
+      />
 
-      <section aria-labelledby="readiness" className="space-y-2 rounded-md border bg-white p-4 text-sm">
-        <h2 id="readiness" className="font-medium">Readiness</h2>
+      <section aria-labelledby="readiness" className="card space-y-2 p-4 text-sm sm:p-5">
+        <h2 id="readiness" className="text-sm font-semibold text-zinc-900">Readiness</h2>
         <dl className="grid gap-1 sm:grid-cols-2">
-          <div><dt className="inline text-neutral-600">Business profile: </dt><dd className="inline">{ready.profileStatus ? ready.profileStatus.toLowerCase().replace("_", " ") : "not started"}</dd></div>
-          <div><dt className="inline text-neutral-600">AI provider: </dt><dd className="inline">{ready.provider.configured ? `Gemini (${ready.provider.model})` : "not configured"}</dd></div>
-          <div><dt className="inline text-neutral-600">AI drafting: </dt><dd className="inline">{ready.aiReady ? "ready" : "limited"}</dd></div>
-          <div><dt className="inline text-neutral-600">Your limits: </dt><dd className="inline">{ready.limits.userPerMinute} drafts/min, {ready.limits.businessPerHour}/hour per business</dd></div>
+          <div><dt className="inline text-zinc-500">Business profile: </dt><dd className="inline">{ready.profileStatus ? ready.profileStatus.toLowerCase().replace("_", " ") : "not started"}</dd></div>
+          <div><dt className="inline text-zinc-500">AI provider: </dt><dd className="inline">{ready.provider.configured ? `Gemini (${ready.provider.model})` : "not configured"}</dd></div>
+          <div><dt className="inline text-zinc-500">AI drafting: </dt><dd className="inline">
+            <Chip tone={ready.aiReady ? "success" : "warning"}>{ready.aiReady ? "ready" : "limited"}</Chip>
+          </dd></div>
+          <div><dt className="inline text-zinc-500">Your limits: </dt><dd className="inline">{ready.limits.userPerMinute} drafts/min, {ready.limits.businessPerHour}/hour per business</dd></div>
         </dl>
         {ready.blockers.length > 0 && (
           <Alert tone="info">
@@ -49,7 +54,7 @@ export default async function LabPage({ params }: { params: Promise<{ businessId
             </p>
           </Alert>
         )}
-        <p className="text-xs text-neutral-600">
+        <p className="text-xs text-zinc-500">
           Draft requests are processed by the configured external AI provider (Google Gemini). Review the provider&apos;s data-handling terms before
           using any real customer information; this lab is for fictional or anonymised test data only.
         </p>
@@ -58,19 +63,21 @@ export default async function LabPage({ params }: { params: Promise<{ businessId
       {ready.canUse && <NewConversationForm businessId={businessId} />}
 
       <section aria-labelledby="convos" className="space-y-3">
-        <h2 id="convos" className="font-medium">Test conversations ({conversations.length})</h2>
+        <h2 id="convos" className="text-sm font-semibold text-zinc-900">
+          Test conversations <span className="font-normal text-zinc-500">({conversations.length})</span>
+        </h2>
         {conversations.length === 0 ? (
-          <p className="rounded-md border border-dashed bg-white p-4 text-sm text-neutral-600">
+          <p className="card border-dashed p-5 text-center text-sm text-zinc-600">
             No test conversations yet.{ready.canUse ? " Start one above to see how a reply would be drafted." : " An owner or admin can start one."}
           </p>
         ) : (
-          <ul className="divide-y rounded-md border bg-white text-sm">
+          <ul className="card divide-y divide-zinc-100">
             {conversations.map((c) => (
               <li key={c.id}>
-                <Link href={`${base}/lab/${c.id}`} className="flex flex-wrap items-center justify-between gap-2 p-3 hover:bg-neutral-50">
+                <Link href={`${base}/lab/${c.id}`} className="flex flex-wrap items-center justify-between gap-2 p-4 transition-colors hover:bg-zinc-50">
                   <span className="min-w-0 break-words">
-                    <span className="font-medium">{c.title ?? "Empty conversation"}</span>
-                    <span className="ml-2 text-xs text-neutral-500">{c.customerLabel} · {c.messageCount} messages · by {c.createdByName} · {fmtDateTime(c.lastMessageAt)}</span>
+                    <span className="font-medium text-zinc-900">{c.title ?? "Empty conversation"}</span>
+                    <span className="ml-2 text-xs text-zinc-500">{c.customerLabel} · {c.messageCount} messages · by {c.createdByName} · {fmtDateTime(c.lastMessageAt)}</span>
                   </span>
                   <ConversationStatusBadge status={c.status} />
                 </Link>

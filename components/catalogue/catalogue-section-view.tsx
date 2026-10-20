@@ -1,6 +1,7 @@
 import { ActionButton } from "@/components/profile/action-button";
 import { ItemBadge } from "@/components/profile/status-badge";
-import { Alert } from "@/components/ui/field";
+import { CardTitle } from "@/components/ui/card";
+import { Alert, Chip } from "@/components/ui/field";
 import {
   approveCatalogueItemAction,
   deleteCatalogueItemAction,
@@ -45,7 +46,7 @@ export function CatalogueSectionView({
       {/* Price conflicts alert */}
       {conflicts.length > 0 && (
         <Alert tone="error">
-          <p className="font-medium">Price discrepancies detected between Catalogue and FAQs:</p>
+          <p className="font-semibold">Price discrepancies detected between Catalogue and FAQs:</p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
             {conflicts.map((c) => (
               <li key={`${c.catalogueItemId}-${c.faqId}`}>
@@ -58,34 +59,36 @@ export function CatalogueSectionView({
 
       {/* Forms (Edit / Import) */}
       {canEdit && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <section className="rounded-md border bg-white p-4">
-            <h2 className="mb-3 font-medium">Add product or service</h2>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <section className="card p-4 sm:p-5">
+            <CardTitle title="Add product or service" subtitle="New items start as drafts; approve them to make them answerable." />
             <CatalogueItemForm businessId={businessId} />
           </section>
 
-          <section className="rounded-md border bg-white p-4">
-            <h2 className="mb-3 font-medium">Bulk import items (CSV)</h2>
+          <section className="card p-4 sm:p-5">
+            <CardTitle title="Bulk import items (CSV)" subtitle="Import many items at once without overwriting approved facts." />
             <CatalogueImportForm businessId={businessId} />
           </section>
         </div>
       )}
 
       {/* Item List */}
-      <div>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-medium">Catalogue items ({items.length})</h2>
-          <span className="text-xs text-neutral-500">
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-zinc-900">
+            Catalogue items <span className="font-normal text-zinc-500">({items.length})</span>
+          </h2>
+          <span className="text-xs text-zinc-500">
             Only approved items are used by LightDesk to answer customer enquiries.
           </span>
         </div>
 
         {items.length === 0 ? (
-          <p className="rounded-md border border-dashed bg-white p-6 text-center text-sm text-neutral-600">
+          <p className="card border-dashed p-6 text-center text-sm text-zinc-600">
             No catalogue items yet. Add products or import a CSV list to let LightDesk answer price and stock questions.
           </p>
         ) : (
-          <ul className="space-y-3">
+          <ul className="grid gap-3 md:grid-cols-2">
             {items.map((item) => {
               const isApproved = item.state === "APPROVED";
               const priceDisplay = Number(item.priceGhs).toFixed(2);
@@ -94,76 +97,65 @@ export function CatalogueSectionView({
                 : null;
 
               return (
-                <li key={item.id} className="rounded-md border bg-white p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-base font-semibold text-neutral-900">{item.name}</span>
+                <li key={item.id} className="card flex flex-col p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="break-words text-sm font-semibold text-zinc-900">{item.name}</p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                         <ItemBadge status={isApproved ? "approved" : "draft"} />
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                            item.inStock
-                              ? "bg-green-100 text-green-800"
-                              : "bg-red-100 text-red-800"
-                          }`}
-                        >
+                        <Chip tone={item.inStock ? "success" : "danger"}>
                           {item.inStock ? "In stock" : "Out of stock"}
-                        </span>
-                        {item.category && (
-                          <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
-                            {item.category}
-                          </span>
-                        )}
+                        </Chip>
+                        {item.category && <Chip tone="neutral">{item.category}</Chip>}
                         {item.sku && (
-                          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-mono text-neutral-600">
+                          <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs text-zinc-600">
                             SKU: {item.sku}
                           </span>
                         )}
                       </div>
-
-                      {item.variants && (
-                        <p className="mt-1 text-xs text-neutral-600">
-                          <span className="font-medium">Variants:</span> {item.variants}
-                        </p>
-                      )}
-
-                      {item.description && (
-                        <p className="mt-1 text-xs text-neutral-500">{item.description}</p>
-                      )}
-
-                      {!isApproved && approvedPriceDisplay && (
-                        <p className="mt-1 text-xs text-amber-700">
-                          Pending edit: Working price is {priceDisplay} GHS (Approved in-force price: {approvedPriceDisplay} GHS).
-                        </p>
-                      )}
                     </div>
-
                     <div className="text-right">
-                      <div className="text-lg font-bold text-neutral-900">
-                        {priceDisplay} <span className="text-xs font-normal text-neutral-500">GHS</span>
-                      </div>
-
-                      <div className="mt-3 flex items-center justify-end gap-2">
-                        {!isApproved && canApprove && (
-                          <ActionButton
-                            action={approveCatalogueItemAction}
-                            fields={{ businessId, itemId: item.id }}
-                            label="Approve item"
-                            pendingLabel="Approving…"
-                            variant="primary"
-                          />
-                        )}
-                        {canEdit && (
-                          <ActionButton
-                            action={deleteCatalogueItemAction}
-                            fields={{ businessId, itemId: item.id }}
-                            label="Delete"
-                            pendingLabel="Deleting…"
-                            variant="danger"
-                          />
-                        )}
-                      </div>
+                      <p className="whitespace-nowrap text-lg font-bold tabular-nums text-zinc-900">
+                        {priceDisplay} <span className="text-xs font-normal text-zinc-500">GHS</span>
+                      </p>
                     </div>
+                  </div>
+
+                  <div className="mt-2 min-w-0 flex-1">
+                    {item.variants && (
+                      <p className="text-xs text-zinc-600">
+                        <span className="font-medium text-zinc-700">Variants:</span> {item.variants}
+                      </p>
+                    )}
+                    {item.description && (
+                      <p className="mt-1 break-words text-xs text-zinc-500">{item.description}</p>
+                    )}
+                    {!isApproved && approvedPriceDisplay && (
+                      <p className="mt-1.5 text-xs text-amber-700">
+                        Pending edit: Working price is {priceDisplay} GHS (Approved in-force price: {approvedPriceDisplay} GHS).
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-end gap-2 border-t border-zinc-100 pt-3">
+                    {!isApproved && canApprove && (
+                      <ActionButton
+                        action={approveCatalogueItemAction}
+                        fields={{ businessId, itemId: item.id }}
+                        label="Approve item"
+                        pendingLabel="Approving…"
+                        variant="primary"
+                      />
+                    )}
+                    {canEdit && (
+                      <ActionButton
+                        action={deleteCatalogueItemAction}
+                        fields={{ businessId, itemId: item.id }}
+                        label="Delete"
+                        pendingLabel="Deleting…"
+                        variant="danger"
+                      />
+                    )}
                   </div>
                 </li>
               );
