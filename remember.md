@@ -810,7 +810,22 @@ continue only with the next explicitly requested task.
 
 ## 15. Change log
 
--   **2026-10-20 (Post-fix live re-run of M4 battery):** Re-ran the full M4 scenario battery live
+-   **2026-10-20 (M6 specification):** Authored `docs/m6-whatsapp.md` — the implementation
+    spec for the Official WhatsApp Integration milestone — after verifying current Meta
+    platform facts from primary sources (about-the-platform, per-message pricing pages,
+    Embedded Signup / coexistence onboarding docs, checked 2026-10-20). Key design
+    decisions: coexistence is the assumed default so owners keep their WhatsApp Business
+    app number; conversation states OWNER_ONLY (default) / AI_ASSIST (opt-in) / TAKEOVER
+    with every outbound message requiring an explicit owner send; the M4 deterministic
+    pre-check and M3 rate caps apply to live inbound traffic; free-form replies stay
+    inside the 24-hour service window and thus the 1,000-free-service-messages/month
+    tier; the Ghana out-of-tier service rate is not hardcoded, it must be read from
+    Meta's rate card at implementation. Phased as M6a (schema + skeleton), M6b (webhook
+    + inbound), M6c (takeover state machine), M6d (outbound + Embedded Signup UI).
+    Runner prerequisites (Meta dev app, Tech Provider status, webhook env values,
+    encryption keys) are listed in the spec; Embedded Signup and live smoke cannot run
+    without those. Roadmap M6 status updated to "Specification drafted".
+- **2026-10-20 (Post-fix live re-run of M4 battery):** Re-ran the full M4 scenario battery live
     (`scripts/m4-live-verify.ts`, isolated tenant) after the pre-check hardening. Scenario C now
     uses the deterministic path: `source: RULES`, `usedAi: false`, 0 tokens, safe payment-holding
     reply, conversation escalated — the M4 regex-gap finding is closed end-to-end. All other
