@@ -11,8 +11,11 @@ export type Trigger = {
 // Deterministic pre-checks on UNTRUSTED customer text. They save an AI call and cannot be talked out of.
 const OVERRIDE =
   /\b(ignore|disregard|forget|override)\b[^.?!]{0,40}\b(instruction|instructions|rules?|prompt|polic(?:y|ies)|guidelines)\b|\b(system|developer) (prompt|message)\b|\b(reveal|show|print|leak)\b[^.?!]{0,30}\b(prompt|api key|secret|password|credentials?)\b|\bapi key\b/i;
+// Payment/refund claims must reach a human. Covers adverbs in any order ("I just sent",
+// "I have already paid"), contractions ("I've sent") and dispatch-confirmations ("confirm and dispatch").
+// Intentionally cautious: a phrase like "I was sent the account number" also escalates.
 const PAYMENT_CLAIM =
-  /\b(refund me|my refund|want (?:a )?refund|money back|charge ?back|i (?:have |already )?(?:paid|sent|transferred|deposited)|payment (?:was|has|is|not)|confirm (?:my )?payment|did you (?:get|receive))\b/i;
+  /\b(?:refund me|my refund|want (?:a )?refund|money back|money sent|charge ?back|payment (?:was|has|is|not)|did you (?:get|receive|confirm)|confirm (?:my )?(?:payment|transfer|deposit)|confirm\b[^.?!]{0,25}dispatch|(?:(?:i|we)['’]?\s*(?:(?:have|has|was|just|now|already|only|m)|(?:['’]?\s*ve))?\s*(?:already|just|now|only|you|have|has|was)?\s*(?:paid|sent|transferred|deposited)))\b/i;
 const HUMAN_REQUEST =
   /\b(speak|talk|chat) (?:to|with) (?:a |an |the )?(?:real )?(?:person|human|someone|somebody|owner|manager|agent|staff|representative)\b|\breal person\b|\bhuman being\b|\blive agent\b|\bcustomer service\b|\byour (?:owner|manager|boss)\b/i;
 const COMPLAINT =

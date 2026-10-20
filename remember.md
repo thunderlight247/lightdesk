@@ -810,6 +810,13 @@ continue only with the next explicitly requested task.
 
 ## 15. Change log
 
+-   **2026-10-20 (Payment-claim pre-check hardening):** Extended the deterministic
+    `PAYMENT_CLAIM` regex in `modules/lab/rules.ts` to close the gap found during the M4
+    re-verification: adverbs in any order ("I just sent", "I have already paid"), contractions
+    ("I've sent"), `we`-paid phrasing, "money sent", `did you confirm`, and
+    "confirm ... dispatch" within 25 characters. Regression tests added in
+    `tests/unit/lab-logic.test.ts`; full quality gate passes (68 unit + 150 integration
+    tests, typecheck, lint, build).
 -   **2026-10-20 (Pre-M6 UI/UX redesign):** Professional redesign pass across the workspace UI to
     prepare for M6 integration. Added a shared design system (brand color tokens, `Card`, `Chip`,
     `PageHeading`, variant-aware `Button`, focus-ring form controls, pill navigation, sticky header,

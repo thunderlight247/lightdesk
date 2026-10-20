@@ -41,6 +41,16 @@ describe("pre-model triggers (untrusted customer text)", () => {
     expect(detectTrigger("Can I speak to a real person?")?.kind).toBe("human_request");
     expect(detectTrigger("This is a scam, I will call the police")?.kind).toBe("complaint");
   });
+  it("payment claims: adverb, contraction and dispatch-confirmations are caught deterministically (M4 re-verification finding)", () => {
+    expect(detectTrigger("I just sent 500 GHS to your MTN MoMo. Please confirm and dispatch my order.")?.kind).toBe("payment_claim");
+    expect(detectTrigger("I've sent the money already")?.kind).toBe("payment_claim");
+    expect(detectTrigger("I’m paid, please dispatch")?.kind).toBe("payment_claim");
+    expect(detectTrigger("We paid on Monday, please dispatch")?.kind).toBe("payment_claim");
+    expect(detectTrigger("I have already transferred the amount")?.kind).toBe("payment_claim");
+    expect(detectTrigger("Confirm and dispatch my order")?.kind).toBe("payment_claim");
+    expect(detectTrigger("Did you confirm my transfer?")?.kind).toBe("payment_claim");
+    expect(detectTrigger("Money sent, please check")?.kind).toBe("payment_claim");
+  });
   it("does not trigger on ordinary or policy questions", () => {
     for (const t of ["What is your refund policy?", "Do you open on Sunday?", "Do you deliver to Accra?", "How much is the Samsung A15?"]) {
       expect(detectTrigger(t)).toBeNull();
