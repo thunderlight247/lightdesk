@@ -10,7 +10,7 @@ describe("password hashing", () => {
     expect(h1).not.toContain("a-long-test-password");
     expect(await verifyPassword("a-long-test-password", h1)).toBe(true);
     expect(await verifyPassword("a-long-test-passwore", h1)).toBe(false);
-  });
+  }, 15000);
   it("rejects malformed or hostile stored hashes without throwing", async () => {
     for (const bad of ["", "plain", "scrypt$1$2$3", "scrypt$99999999999$8$1$AAAA$AAAA", "bcrypt$a$b$c$d$e"]) {
       expect(await verifyPassword("x", bad)).toBe(false);

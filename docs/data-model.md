@@ -25,6 +25,18 @@ Design notes:
 - Provenance user ids are plain columns (no FK): users are never hard-deleted, and the authoritative history is the `AuditEvent` log. Revisit if user deletion is introduced.
 - Migrations: `20261019000000_business_profile` (enums, tables, indexes, FKs) and `20261019000100_business_profile_constraints` (CHECKs). Both only add objects; no existing table is altered.
 
+## M3 — AI Conversation Laboratory (simulation only)
+
+| Model | Purpose | Key constraints |
+|---|---|---|
+| `LabConversation` | A simulated conversation with a fictional customer: status ACTIVE / ESCALATED / RESOLVED, escalation reason, creator | FK to `Business` (cascade); CHECK escalated ⇒ reason, resolved ⇒ timestamp; label ≤40, title ≤80 |
+| `LabMessage` | CUSTOMER message, or ASSISTANT draft. Drafts keep the original `content` forever; approval stores `approvedContent` + approver + time. Also: draft state (DRAFT / APPROVED / SUPERSEDED), source (AI / RULES), result status, reason, missing information, escalation reason, **server-verified evidence snapshot**, profile revision, generation id | unique (conversationId, seq); CHECK role shape (customer rows carry no draft data; assistant rows always do); CHECK approved ⇔ approved text + who + when; content 1–1500 |
+| `LabGeneration` | One row per drafting attempt: status RUNNING / SUCCEEDED / FAILED, `usedAi`, provider, model, error kind, latency, prompt/completion/total tokens (**NULL = not reported, never 0**), input size, idempotency key | unique (conversationId, idempotencyKey); **partial unique index: one RUNNING generation per conversation**; CHECK key format, non-negative usage, FAILED ⇒ error kind |
+
+Notes: there is deliberately **no** "sent", "delivered" or channel column anywhere. Evidence is a snapshot of the approved text used at the time, so the
+basis of a draft stays inspectable after the profile changes. Provenance user ids are plain columns (as in M2). Migrations:
+`20261020000000_ai_conversation_lab` (enums, tables, indexes, FKs) and `20261020000100_ai_conversation_lab_constraints` (CHECKs + partial index); additive only.
+
 Migrations (earlier milestones): `20261017000000_init` (tables, enums, indexes, FKs),
 `20261017000100_integrity_constraints` (CHECKs and the partial index, which Prisma cannot model) and
 `20261018000000_business_identity_fields` (M1, additive: nullable `description`/`location` + length CHECKs; existing rows untouched).

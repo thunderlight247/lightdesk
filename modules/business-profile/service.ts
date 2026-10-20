@@ -526,9 +526,10 @@ export async function changeProfileStatus(actorId: string, businessId: string, t
 export async function getApprovedProfileSnapshot(businessId: string) {
   const profile = await prisma.businessProfile.findUnique({ where: { businessId } });
   if (!profile || profile.status !== "ACTIVE") return null;
-  const [entries, faqs] = await Promise.all([
+  const [entries, faqs, catalogueItems] = await Promise.all([
     prisma.profileEntry.findMany({ where: { profileId: profile.id, approvedValue: { not: null } } }),
     prisma.faqEntry.findMany({ where: { profileId: profile.id, isActive: true, approvedAt: { not: null } }, orderBy: { createdAt: "asc" } }),
+    prisma.catalogueItem.findMany({ where: { profileId: profile.id, state: "APPROVED" }, orderBy: { name: "asc" } }),
   ]);
   const values: Record<string, string> = {};
   const approvedCap = new Map<string, boolean>();
@@ -545,5 +546,15 @@ export async function getApprovedProfileSnapshot(businessId: string) {
     values, // approved identity / offerings / communication / policy values; absent key = unknown
     faqs: faqs.map((f) => ({ id: f.id, question: f.approvedQuestion!, answer: f.approvedAnswer!, category: f.approvedCategory })),
     capabilities,
+    catalogue: catalogueItems.map((c) => ({
+      id: c.id,
+      name: c.approvedName ?? c.name,
+      description: c.approvedDescription,
+      category: c.approvedCategory,
+      priceGhs: Number(c.approvedPriceGhs ?? c.priceGhs),
+      currency: c.currency,
+      inStock: c.approvedInStock ?? c.inStock,
+      variants: c.approvedVariants,
+    })),
   };
 }

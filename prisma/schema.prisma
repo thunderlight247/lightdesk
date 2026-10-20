@@ -37,6 +37,41 @@ enum ReviewState {
   APPROVED
 }
 
+enum LabConversationStatus {
+  ACTIVE
+  ESCALATED
+  RESOLVED
+}
+
+enum LabMessageRole {
+  CUSTOMER
+  ASSISTANT
+}
+
+enum LabDraftState {
+  DRAFT
+  APPROVED
+  SUPERSEDED
+}
+
+enum LabDraftSource {
+  AI
+  RULES
+}
+
+enum LabResultStatus {
+  ANSWERABLE
+  NEEDS_INFORMATION
+  CONFLICT_DETECTED
+  ESCALATION_REQUIRED
+}
+
+enum LabGenerationStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
 enum MembershipRole {
   OWNER
   ADMIN
@@ -87,6 +122,7 @@ model Business {
   invitations Invitation[]
   auditEvents AuditEvent[]
   profile     BusinessProfile?
+  labConversations LabConversation[]
 }
 
 model BusinessMembership {
@@ -164,6 +200,7 @@ model BusinessProfile {
   business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
   entries  ProfileEntry[]
   faqs     FaqEntry[]
+  catalogueItems CatalogueItem[]
 }
 
 model ProfileEntry {
@@ -212,4 +249,124 @@ model FaqEntry {
 
   @@index([profileId, normalizedQuestion])
   @@index([profileId, isActive])
+}
+
+// ---- M5: Structured Product Catalogue & Data Hardening ---------------------------------
+model CatalogueItem {
+  id                  String      @id @default(cuid())
+  profileId           String
+  name                String
+  description         String?
+  category            String?
+  priceGhs            Decimal     @db.Decimal(10, 2)
+  currency            String      @default("GHS")
+  inStock             Boolean     @default(true)
+  variants            String?
+  sku                 String?
+  normalizedName      String
+  
+  // Review & governance (mirrors M2 ProfileEntry/FaqEntry)
+  state               ReviewState @default(DRAFT)
+  approvedName        String?
+  approvedDescription String?
+  approvedCategory    String?
+  approvedPriceGhs    Decimal?    @db.Decimal(10, 2)
+  approvedInStock     Boolean?
+  approvedVariants    String?
+  approvedSku         String?
+  revision            Int         @default(1)
+  
+  createdById         String
+  updatedById         String
+  approvedById        String?
+  approvedAt          DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  profile BusinessProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, normalizedName])
+  @@index([profileId, state])
+  @@index([profileId, category])
+}
+
+// ---- M3: AI Conversation Laboratory (simulation only; nothing here is ever sent to a real customer) ----
+model LabConversation {
+  id               String                @id @default(cuid())
+  businessId       String
+  createdById      String
+  title            String?
+  customerLabel    String                @default("Test customer") // fictional; never real customer data
+  status           LabConversationStatus @default(ACTIVE)
+  escalationReason String?
+  escalatedAt      DateTime?
+  resolvedAt       DateTime?
+  resolvedById     String?
+  lastMessageAt    DateTime              @default(now())
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  business    Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  messages    LabMessage[]
+  generations LabGeneration[]
+
+  @@index([businessId, lastMessageAt])
+  @@index([businessId, createdById])
+}
+
+// A customer's simulated message, or an assistant message. Assistant rows start as an AI/RULES draft
+// (`content` is never edited); approving records the text actually used in the simulation.
+model LabMessage {
+  id             String         @id @default(cuid())
+  conversationId String
+  seq            Int
+  role           LabMessageRole
+  content        String
+  createdById    String? // customer rows: the user who typed the simulated message
+  createdAt      DateTime       @default(now())
+
+  draftState         LabDraftState?
+  source             LabDraftSource?
+  resultStatus       LabResultStatus?
+  reason             String?
+  missingInformation Json?
+  escalationReason   String?
+  evidence           Json? // server-verified snapshots of the approved records used; never model-supplied text
+  profileRevision    Int?
+  generationId       String?
+  approvedContent    String?
+  approvedById       String?
+  approvedAt         DateTime?
+
+  conversation LabConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, seq])
+  @@index([conversationId, createdAt])
+}
+
+// One row per drafting attempt: usage accounting, rate limiting, idempotency and in-flight guard.
+model LabGeneration {
+  id               String              @id @default(cuid())
+  conversationId   String
+  businessId       String
+  requestedById    String
+  idempotencyKey   String
+  status           LabGenerationStatus @default(RUNNING)
+  usedAi           Boolean             @default(false)
+  provider         String?
+  model            String?
+  errorKind        String?
+  latencyMs        Int?
+  promptTokens     Int? // null = the provider did not report it (NOT zero)
+  completionTokens Int?
+  totalTokens      Int?
+  inputChars       Int
+  createdAt        DateTime            @default(now())
+  finishedAt       DateTime?
+
+  conversation LabConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, idempotencyKey])
+  @@index([businessId, createdAt])
+  @@index([requestedById, createdAt])
 }

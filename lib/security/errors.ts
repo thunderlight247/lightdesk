@@ -4,6 +4,7 @@ export type ErrorCode =
   | "NOT_FOUND"
   | "VALIDATION"
   | "CONFLICT"
+  | "RATE_LIMITED"
   | "INVALID_INVITATION";
 
 export class AppError extends Error {
@@ -44,6 +45,12 @@ export class ValidationError extends AppError {
 export class ConflictError extends AppError {
   constructor(message = "Conflict") {
     super("CONFLICT", message, 409);
+  }
+}
+
+export class RateLimitError extends AppError {
+  constructor(message = "Too many requests. Please wait a moment and try again.") {
+    super("RATE_LIMITED", message, 429);
   }
 }
 

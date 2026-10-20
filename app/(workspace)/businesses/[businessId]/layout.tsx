@@ -26,6 +26,7 @@ export default async function BusinessLayout({
     { href: base, label: "Overview", exact: true },
     { href: `${base}/members`, label: "Members" },
     { href: `${base}/profile`, label: "Profile" },
+    { href: `${base}/lab`, label: "Lab" },
   ];
   if (can(membership.role, "business:update")) items.push({ href: `${base}/settings`, label: "Settings" });
 

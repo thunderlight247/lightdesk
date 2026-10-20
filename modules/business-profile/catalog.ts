@@ -112,6 +112,9 @@ const policy = (key: string, label: string, help: string, extra: Partial<EntryDe
 const POLICY: EntryDef[] = [
   policy("opening_hours", "Opening hours", "When you are open, including days you are closed.", { recommended: true }),
   policy("delivery", "Delivery", "Whether you deliver, where, and any conditions. Write “We do not deliver” if that is the case.", { recommended: true }),
+  policy("payment_methods", "Payment methods", "Approved payment methods (e.g. MTN MoMo, Telecel Cash, Cash on Delivery).", { recommended: true }),
+  policy("momo_details", "Mobile Money (MoMo) details", "Official registered merchant/account name, network, and number. Used when customers ask how to pay.", { recommended: true }),
+  policy("payment_terms", "Payment terms", "When payment is required (e.g. on delivery, before dispatch, deposit).", { recommended: true }),
   policy("returns", "Returns and refunds", "What customers can return and on what terms.", { recommended: true }),
   policy("appointments", "Appointments and bookings", "How customers book, change or cancel.", { recommended: true }),
   policy("escalation", "Handing over to a person", "When and how a customer should be passed to a person, and who that is.", {
@@ -138,12 +141,14 @@ export function defsForModule(module: ModuleName): EntryDef[] {
   return ENTRY_DEFS.filter((d) => d.module === module);
 }
 
-export type SectionSlug = "identity" | "offerings" | "faq" | "communication" | "policies" | "permissions";
+export type SectionSlug = "identity" | "offerings" | "catalogue" | "faq" | "communication" | "policies" | "permissions";
 export const SECTIONS: readonly { slug: SectionSlug; title: string; module: ModuleName | null; intro: string }[] = [
   { slug: "identity", title: "Identity", module: "IDENTITY",
     intro: "Who the business is. Name, description and location are managed in Settings; this adds the details customers may ask about." },
   { slug: "offerings", title: "Products & services", module: "OFFERINGS",
     intro: "A plain description of what you sell or offer. This is a summary, not a catalogue, price list or stock record." },
+  { slug: "catalogue", title: "Product catalogue", module: null,
+    intro: "Structured products and services with official prices in GHS and stock availability. Approved items are used by LightDesk to answer customer pricing and availability questions accurately." },
   { slug: "faq", title: "FAQs", module: null,
     intro: "Questions customers ask, with the answer you approve. Only approved, active answers can ever be used." },
   { slug: "communication", title: "Communication", module: "COMMUNICATION",

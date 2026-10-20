@@ -7,6 +7,8 @@ import { fmtDateTime } from "@/components/profile/format";
 import { ItemBadge } from "@/components/profile/status-badge";
 import { Alert } from "@/components/ui/field";
 import { loadOverviewOrNotFound, loadProfileViewOrNotFound, requireUserForPage } from "@/lib/auth/guards";
+import { CatalogueSectionView } from "@/components/catalogue/catalogue-section-view";
+import { detectPriceConflicts, listCatalogueItems } from "@/modules/catalogue/service";
 import { defsForModule, SECTIONS } from "@/modules/business-profile/catalog";
 import { PLATFORM_POLICY, isCapability } from "@/modules/permissions/platform-policy";
 import {
@@ -35,7 +37,25 @@ export default async function ProfileSectionPage({ params }: { params: Promise<{
   const who = (id: string | null | undefined) => (id ? actors[id] ?? "a former member" : null);
 
   let body: React.ReactNode;
-  if (sec.slug === "faq") {
+  if (sec.slug === "catalogue") {
+    const [items, conflicts] = await Promise.all([
+      listCatalogueItems(user.id, businessId),
+      detectPriceConflicts(user.id, businessId),
+    ]);
+    body = (
+      <CatalogueSectionView
+        businessId={view.businessId}
+        items={items.map((i) => ({
+          ...i,
+          priceGhs: Number(i.priceGhs),
+          approvedPriceGhs: i.approvedPriceGhs ? Number(i.approvedPriceGhs) : null,
+        }))}
+        conflicts={conflicts}
+        canEdit={caps.canEdit}
+        canApprove={caps.canApprove}
+      />
+    );
+  } else if (sec.slug === "faq") {
     body = (
       <div className="space-y-6">
         {evaluation.conflicts.length > 0 && (

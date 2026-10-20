@@ -55,3 +55,13 @@ export async function loadProfileViewOrNotFound(userId: string, rawBusinessId: s
     throw err;
   }
 }
+
+/** Generic page helper: any expected (AppError) failure renders the 404 page; unexpected errors propagate. */
+export async function orNotFound<T>(promise: Promise<T>): Promise<T> {
+  try {
+    return await promise;
+  } catch (err) {
+    if (err instanceof AppError) notFound();
+    throw err;
+  }
+}

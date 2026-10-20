@@ -37,6 +37,13 @@ no separate Go backend.
 8. **Transport/headers.** `Referrer-Policy: no-referrer` (tokens live in invite URLs), nosniff,
    frame deny. Cookies: HttpOnly, SameSite=Lax, Secure + `__Host-` prefix in production.
 
+## Conversation laboratory (M3)
+`modules/lab/` is a self-contained module: `ai/` (provider interface, Gemini adapter, factory), `config` (server-side settings), `retrieval` (deterministic lookup over the
+approved BIP snapshot), `prompt`, `result` (output contract + application rules), `rules` (deterministic triggers and grounding guards) and `service` (persistence,
+authorization, idempotency, rate limits). Routes: `/businesses/[id]/lab` and `/businesses/[id]/lab/[conversationId]`; server actions are thin wrappers.
+The model never holds authority: facts come only from `getApprovedProfileSnapshot`, evidence is resolved from server-retrieved records, and application code
+decides status, escalation and what is blocked. See `docs/m3-lab.md`.
+
 ## Platform vs business policy
 `modules/permissions/platform-policy.ts` is code-level policy that sits above anything a business can store.
 A business can only narrow what the platform allows: enabling a prohibited capability is refused at save,

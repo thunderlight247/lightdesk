@@ -40,6 +40,18 @@ npm run dev     # http://localhost:3000
    privately. Open it (private window) to register as the owner.
 3. The owner can invite admins/members from **Members & invitations** (same one-time-link flow).
 
+## AI conversation lab (M3)
+Optional. Without a Gemini key the rest of the app works and the lab shows a configuration state (rules-based replies still work). Add placeholders to `.env`
+(never commit real values):
+```
+GEMINI_API_KEY=""            # server-side only; create one in Google AI Studio
+GEMINI_MODEL="gemini-3.5-flash"   # must be in the server-side allowlist (modules/lab/config.ts)
+LAB_AI_TIMEOUT_MS=30000
+LAB_RATE_USER_PER_MINUTE=6
+LAB_RATE_BUSINESS_PER_HOUR=60
+```
+The test suite never needs a key: it uses a deterministic mock provider. Drafts are **simulation only**; nothing is sent to any customer.
+
 ## Quality gates
 ```bash
 npm run lint
