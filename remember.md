@@ -810,6 +810,17 @@ continue only with the next explicitly requested task.
 
 ## 15. Change log
 
+-   **2026-10-20 (M6 scaffolding + real-credential gate):** Added the M6 environment scaffold and a
+    live credential-verification gate ahead of wiring a real Meta API key. `.env.example` documents
+    the full WHATSAPP_* env set (app id/secret, access token, WABA + phone-number ids, webhook
+    verify token, Graph version defaulting to v26.0 — current per the Graph API changelog). New
+    `modules/whatsapp/` skeleton: `config.ts` (mirrors the lab config pattern — missing settings
+    surface as safe `issues`, never break sign-in), `graph.ts` (the only place Graph HTTP calls are
+    made, fetch-injectable). New `scripts/whatsapp-verify.ts`: ONE read-only GET on the configured
+    phone number proves the token works, shows display number/quality rating/verification status,
+    and cross-checks the WABA id. Unit tests (`tests/unit/whatsapp.test.ts`, 6) cover config
+    validation and Graph parsing with injected fakes — no network in tests. NOT committed: real
+    credentials stay in `.env` only. Awaiting the user's real values in `.env` to run the script.
 -   **2026-10-20 (M6 specification):** Authored `docs/m6-whatsapp.md` — the implementation
     spec for the Official WhatsApp Integration milestone — after verifying current Meta
     platform facts from primary sources (about-the-platform, per-message pricing pages,
