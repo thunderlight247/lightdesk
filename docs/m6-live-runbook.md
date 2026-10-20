@@ -51,9 +51,12 @@ Note: inbound traffic to a test number works from anyone; only REPLYING is limit
 up-to-5 recipients in **WhatsApp → API Setup → To** (recipient allowlist). Add your own phone
 there before sending anything outbound.
 
-## 4. Send an owner-approved reply (M6d gate)
+## 4. Owner reviews and sends a reply (M6d gate)
 
-The send gate requires (all implemented and unit/integration tested):
+The customer stays in the standard WhatsApp app/Desktop. The **owner/admin**, not the
+customer, reviews the conversation in the private LightDesk owner console and explicitly
+sends a reply into the same WhatsApp thread. The send gate requires (all implemented and
+unit/integration tested):
 
 - an OWNER or ADMIN of the bound business (MEMBER cannot send),
 - an open **24-hour customer service window** measured from the customer's last inbound,
@@ -61,8 +64,10 @@ The send gate requires (all implemented and unit/integration tested):
 - metering: 1,000 free **service** messages per calendar month per messaging account —
   the meter counts outbound sends and is audited with each send.
 
-Until the conversation UI ships, send through the service function in a scratch script wired
-to the conversation id from step 3. The UI panel is the M6c/M6d follow-up.
+The LightDesk owner-console inbox/thread UI is the review surface; the customer never uses
+that UI. If no owner-console send form is available in a particular environment, do not
+send via an ad hoc unreviewed automation; use the authorized send service only as a signed-in
+OWNER/ADMIN action.
 
 ## 5. Connect the REAL business number (coexistence)
 

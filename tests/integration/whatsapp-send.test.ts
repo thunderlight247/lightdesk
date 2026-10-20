@@ -52,9 +52,9 @@ afterEach(async () => {
 
 describe("getSendReadiness", () => {
   it("reports window open inside 24h and the free meter", async () => {
-    const { bizA } = await seed();
+    const { bizA, actor } = await seed();
     const { conv } = await seedConversationWithInbound(bizA.id, { inboundAgeMs: 60_000 });
-    const r = await getSendReadiness(bizA.id, conv.id);
+    const r = await getSendReadiness(actor.id, bizA.id, conv.id);
     expect(r.windowOpen).toBe(true);
     expect(r.mode).toBe("OWNER_ONLY");
     expect(r.meterUsed).toBe(0);
@@ -64,19 +64,21 @@ describe("getSendReadiness", () => {
   });
 
   it("reports the window closed after 24h and with no inbound at all", async () => {
-    const { bizA } = await seed();
+    const { bizA, actor } = await seed();
     const { conv } = await seedConversationWithInbound(bizA.id, { inboundAgeMs: 25 * 3_600_000 });
-    expect((await getSendReadiness(bizA.id, conv.id)).windowOpen).toBe(false);
+    expect((await getSendReadiness(actor.id, bizA.id, conv.id)).windowOpen).toBe(false);
     const conv2 = await prisma.whatsAppConversation.create({
       data: { connectionId: (await prisma.whatsAppConnection.findFirstOrThrow({ where: { businessId: bizA.id } })).id, businessId: bizA.id, customerPhone: "233540999111" },
     });
-    expect((await getSendReadiness(bizA.id, conv2.id)).windowOpen).toBe(false);
+    expect((await getSendReadiness(actor.id, bizA.id, conv2.id)).windowOpen).toBe(false);
   });
 
-  it("404s for another business's conversation id", async () => {
-    await seed();
+  it("404s for another business's conversation id and hides tenant existence", async () => {
+    const { bizA, actor } = await seed();
+    const { conv } = await seedConversationWithInbound(bizA.id);
     const bizB = await prisma.business.findFirstOrThrow({ where: { name: "Biz B" } });
-    await expect(getSendReadiness(bizB.id, "nonexistent")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(getSendReadiness(actor.id, bizB.id, conv.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(getSendReadiness("not-a-member", bizB.id, conv.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });
 
@@ -154,7 +156,7 @@ describe("sendOwnerReply", () => {
       const out = await sendOwnerReply(actor.id, bizA.id, conv.id, { text }, { fetchImpl: multiFetch });
       expect(out.sent).toBe(true);
     }
-    const r = await getSendReadiness(bizA.id, conv.id);
+    const r = await getSendReadiness(actor.id, bizA.id, conv.id);
     expect(r.meterUsed).toBe(2);
     expect(r.meterFree).toBe(998);
   });

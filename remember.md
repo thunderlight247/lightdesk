@@ -810,6 +810,22 @@ continue only with the next explicitly requested task.
 
 ## 15. Change log
 
+-   **2026-10-20 (Owner console UI; WhatsApp remains customer interface):** Owner confirmed that
+    customers use only standard WhatsApp mobile/Desktop; LightDesk is backend orchestration; the
+    business operator reviews in a private LightDesk console; human approval remains required.
+    Documented that decision in `docs/m6-whatsapp.md` §§1, 7–8 (and clarified owner vs customer
+    in `docs/m6-live-runbook.md`). Built `/businesses/[businessId]/whatsapp` inbox and
+    `/whatsapp/[conversationId]` thread. Inbox surfaces connection status, customer name/phone,
+    latest message, mode/state, timestamp. Thread shows inbound/outbound messages, status, service
+    window close, free-tier meter, explicit owner/admin send form and closed-window warning; MEMBER
+    has read-only console. New authorized service reads in `modules/whatsapp/service.ts` gate on
+    `whatsapp:read`, scope by business, and never select token ciphertext; `getSendReadiness` now
+    requires actorId, closing a prior auth gap. New server action derives actor from session and
+    calls permission-checked `sendOwnerReply`. Workspace navigation only shows WhatsApp to members
+    with read permission. Integration tests cover OWNER/ADMIN/MEMBER reads, cross-tenant denial,
+    token non-disclosure. Full `npm run check` exit 0: 86 unit + 170 integration, lint,
+    typecheck, production build. UI is an operator console only; no customer-facing chat UI was
+    added.
 -   **2026-10-20 (M6d outbound send gate + live runbook):** Implemented the owner-approved send
     gate. New permission `whatsapp:send` (OWNER/ADMIN per the spec's default decision;
     `whatsapp:read` also added for the upcoming conversation UI). `modules/whatsapp/graph.ts`

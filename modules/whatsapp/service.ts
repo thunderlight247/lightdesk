@@ -10,7 +10,7 @@ import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/security/e
 import { readSecretBoxKey, decryptSecret } from "@/lib/security/secret-box";
 import { sendWhatsAppText } from "@/modules/whatsapp/graph";
 import { readWhatsappConfig } from "@/modules/whatsapp/config";
-import { requireMembership } from "@/modules/permissions/access";
+import { requireMembership, requirePermission } from "@/modules/permissions/access";
 import { can } from "@/modules/permissions/roles";
 import type { InboundMessage } from "@/modules/whatsapp/webhooks";
 
@@ -116,7 +116,8 @@ function windowOpensFrom(a: { timestampSent: Date | null; createdAt: Date }): Da
 }
 
 /** What the owner needs before sending: 24h-window state and the monthly free-tier meter. */
-export async function getSendReadiness(businessId: string, conversationId: string) {
+export async function getSendReadiness(actorId: string, businessId: string, conversationId: string) {
+  await requirePermission(actorId, businessId, "whatsapp:read");
   const conv = await prisma.whatsAppConversation.findFirst({ where: { id: conversationId, businessId } });
   if (!conv) throw new NotFoundError("Conversation not found");
   const now = new Date();
@@ -142,6 +143,49 @@ export async function getSendReadiness(businessId: string, conversationId: strin
 export type SendOutcome =
   | { sent: true; wamid: string; meterUsed: number; meterFree: number }
   | { sent: false; reason: string; meterUsed: number; meterFree: number };
+
+export async function listWhatsAppConversations(actorId: string, businessId: string) {
+  await requirePermission(actorId, businessId, "whatsapp:read");
+  const connection = await prisma.whatsAppConnection.findFirst({
+    where: { businessId, status: "CONNECTED" },
+    select: { id: true, displayPhoneNumber: true, coexistence: true, status: true },
+  });
+  if (!connection) return { connection: null, conversations: [] };
+  const conversations = await prisma.whatsAppConversation.findMany({
+    where: { businessId, connectionId: connection.id },
+    orderBy: { lastMessageAt: "desc" },
+    select: {
+      id: true, customerPhone: true, customerName: true, mode: true, status: true,
+      escalationReason: true, lastMessageAt: true, createdAt: true,
+      _count: { select: { messages: true } },
+      messages: { orderBy: { createdAt: "desc" }, take: 1, select: { text: true, type: true, direction: true } },
+    },
+  });
+  return {
+    connection,
+    conversations: conversations.map(({ _count, messages, ...c }) => ({
+      ...c,
+      messageCount: _count.messages,
+      lastMessagePreview: messages[0]?.text ?? `[${messages[0]?.type ?? "message"}]`,
+      lastMessageDirection: messages[0]?.direction ?? null,
+    })),
+  };
+}
+
+export async function getWhatsAppConversation(actorId: string, businessId: string, conversationId: string) {
+  await requirePermission(actorId, businessId, "whatsapp:read");
+  const conversation = await prisma.whatsAppConversation.findFirst({
+    where: { id: conversationId, businessId },
+    select: {
+      id: true, connectionId: true, customerPhone: true, customerName: true, mode: true,
+      status: true, escalationReason: true, lastMessageAt: true, createdAt: true,
+      messages: { orderBy: { createdAt: "asc" }, select: { id: true, direction: true, text: true, type: true, status: true, timestampSent: true, createdAt: true, fromOwnerApp: true } },
+    },
+  });
+  if (!conversation) throw new NotFoundError("Conversation not found");
+  const readiness = await getSendReadiness(actorId, businessId, conversationId);
+  return { conversation, readiness };
+}
 
 /**
  * Sends a free-form text reply. Every path is deliberately guarded:

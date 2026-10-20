@@ -10,16 +10,21 @@ WhatsApp Cloud API to LightDesk's existing M3/M4/M5 building blocks.
 ## 1. Goal and non-goals
 
 **Goal.** Let a business owner connect their real WhatsApp presence to LightDesk so that
-live customer messages arrive in the workspace, AI drafts replies grounded in the approved
-business profile, and **the owner always retains control**: every outbound message requires
-explicit owner action by default, the owner can take over a conversation at any moment, and
-the AI's ability to send anything automatic is capped by a per-business permission flag.
+live customer messages arrive at the LightDesk backend, AI drafts replies grounded in the
+approved business profile, and the owner always retains control. **WhatsApp is the entire
+customer-facing interface**: customers use the standard WhatsApp app or desktop. LightDesk
+is the backend orchestration layer (webhook → policy/AI/database → Cloud API send), not a
+competing customer chat client. A separate authenticated LightDesk *owner console* is for
+the business operator to review and approve drafts; it is not part of customer interaction.
+Every outbound message requires explicit owner/admin action by default, and the human takes
+over the thread at any moment.
 
 **Non-goals for M6.**
 
-- No automatic AI replies to customers in production. The M6 default is
-  *AI drafts → human reviews → human sends*. (Automatic sending can be layered on later and
-  reuses everything built here; it must never be the default.)
+- No automatic AI replies to customers in production. The chosen policy is
+  *AI drafts → human reviews in the LightDesk owner console → human sends via the backend
+  into the customer's WhatsApp thread*. Customers never need a LightDesk account or UI.
+  Automatic sending requires a separate, explicit product decision and opt-in.
 - No bulk/broadcast campaigns. Cloud API marketing templates exist, but M6 only needs
   **service-session replies inside an open 24-hour window**, which needs no templates at all.
 - No payments invoice generation, no phone-number purchase inside LightDesk (the owner
@@ -316,7 +321,22 @@ script-prepared but **not executed**; that is an honest limitation recorded in
 
 ---
 
-## 7. Assistant communication & escalation policy (owner-provided, 2026-10-20)
+## 7. Product interface boundary (owner-confirmed, 2026-10-20)
+
+- **Customer/client:** standard WhatsApp mobile app or WhatsApp Desktop only. No LightDesk
+  customer-facing chat surface, sign-in, or message composer.
+- **LightDesk backend:** captures signed incoming webhooks, stores the real thread, applies
+  the assistant's policy to produce a draft, and sends through Meta Cloud API only after
+  explicit human approval in the private business operator console.
+- **Business owner/admin:** LightDesk console for reviewing drafts, viewing status/window
+  and meter, then approving/editing and sending. Outbound must always be explicitly
+  attributable to a logged-in member and written to the audit log.
+
+The current M6 phases follow this split: M6c adds draft production / takeover controls,
+M6d's send gate is called by the owner console, and the public webhook only performs the
+backend ingress work.
+
+## 8. Assistant communication & escalation policy (owner-provided, 2026-10-20)
 
 The project owner supplied a persona brief for the assistant core. It is recorded here as
 M6 product material, mapped onto the building blocks that already exist; parts describing
