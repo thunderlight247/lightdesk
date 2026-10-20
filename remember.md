@@ -810,6 +810,26 @@ continue only with the next explicitly requested task.
 
 ## 15. Change log
 
+-   **2026-10-20 (M6d outbound send gate + live runbook):** Implemented the owner-approved send
+    gate. New permission `whatsapp:send` (OWNER/ADMIN per the spec's default decision;
+    `whatsapp:read` also added for the upcoming conversation UI). `modules/whatsapp/graph.ts`
+    gains `sendWhatsAppText` (POST /{version}/{phoneNumberId}/messages with reply-context wamid,
+    fetch-injectable). `modules/whatsapp/service.ts` gains `getSendReadiness` (24h-window state,
+    windowClosesAt, free-tier meter) and `sendOwnerReply`: requires `whatsapp:send`, refuses
+    outside the 24-hour customer service window with an honest reason and ZERO Graph calls,
+    decrypts the stored token (never logging it), surfaces the 1,000/month free service tier,
+    records the OUTBOUND message (wamid-unique; retry race tolerated), updates the conversation,
+    and audits `whatsapp.message.sent` / `whatsapp.send.failed` individually. Tests: 9 new
+    send-gate integration tests (roles, window open/closed, meter across sends, token
+    unavailable, Graph failure with safe reason) + 2 Graph-send unit tests. Gate: exit 0 (86
+    unit + 167 integration, lint, typecheck, build). `docs/m6-live-runbook.md` documents the
+    owner-side steps: public URL choice (hosted / tunnel), Meta dashboard webhook registration
+    (callback `/api/whatsapp/webhook`, verify token), real customer inbound test against the
+    test number, recipient allowlist before outbound, coexistence pairing + rebind script for
+    the REAL number, and the code-verification caveat. Not executed from here (runner-side
+    Meta credentials/public URL needed). Also bound the live credentials to the real business
+    `light` (`cmvgvqbq30001bl0qxffa5r8g`) after fixing the setup script to distinguish Graph
+    cross-check errors from genuine WABA mismatches (commit 7c636eb).
 -   **2026-10-20 (Real webhook credentials wired + signature middleware):** The owner added
     WHATSAPP_APP_SECRET and WHATSAPP_TOKEN_ENCRYPTION_KEY to `.env` (only in `.env`, never
     committed). The webhook POST route was restructured into an explicit verify-first middleware

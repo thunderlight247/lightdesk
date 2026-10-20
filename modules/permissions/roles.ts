@@ -14,6 +14,8 @@ export const PERMISSIONS = [
   "lab:use", // create conversations, send simulated customer messages, request drafts, flag for follow-up
   "lab:approve", // approve drafts for the simulation, resolve escalations
   "lab:delete-any", // delete any simulated conversation in the business
+  "whatsapp:read", // view live WhatsApp conversations and connection status (M6)
+  "whatsapp:send", // send an owner-approved reply through the WhatsApp connection (M6)
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -32,6 +34,8 @@ const MATRIX: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     "lab:use",
     "lab:approve",
     "lab:delete-any",
+    "whatsapp:read",
+    "whatsapp:send",
   ]),
   ADMIN: new Set<Permission>([
     "business:read",
@@ -42,8 +46,10 @@ const MATRIX: Readonly<Record<Role, ReadonlySet<Permission>>> = {
     "profile:edit",
     "lab:read",
     "lab:use",
+    "whatsapp:read",
+    "whatsapp:send",
   ]),
-  MEMBER: new Set<Permission>(["business:read", "members:read", "profile:read", "lab:read"]),
+  MEMBER: new Set<Permission>(["business:read", "members:read", "profile:read", "lab:read", "whatsapp:read"]),
 };
 
 const RANK: Readonly<Record<Role, number>> = { OWNER: 3, ADMIN: 2, MEMBER: 1 };

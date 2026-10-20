@@ -88,3 +88,60 @@ export async function checkWabaOwnsPhoneNumber(
   if (!Array.isArray(list)) return { ok: false, message: "The Graph API returned an unreadable phone-number list." };
   return { ok: true, value: { belongs: list.some((n) => n && n.id === params.phoneNumberId) } };
 }
+
+export type SendTextResult = { ok: true; wamid: string } | { ok: false; message: string };
+
+/**
+ * Sends one free-form text message: POST /{version}/{phoneNumberId}/messages with
+ * `messaging_product: "whatsapp"`. The caller must have checked the 24-hour customer
+ * service window first. `replyToWamid` (context) keeps the WhatsApp thread coherent.
+ */
+export async function sendWhatsAppText(
+  params: {
+    accessToken: string;
+    phoneNumberId: string;
+    graphApiVersion: string;
+    toPhone: string;
+    text: string;
+    replyToWamid?: string | null;
+  },
+  opts: { fetchImpl?: typeof fetch } = {},
+): Promise<SendTextResult> {
+  const fetchFn = opts.fetchImpl ?? fetch;
+  const payload: Record<string, unknown> = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: params.toPhone,
+    type: "text",
+    text: { body: params.text },
+  };
+  if (params.replyToWamid) payload.context = { message_id: params.replyToWamid };
+  let res: Response;
+  try {
+    res = await fetchFn(
+      new URL(`${params.graphApiVersion}/${params.phoneNumberId}/messages`, GRAPH_BASE),
+      {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${params.accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+  } catch {
+    return { ok: false, message: "The Graph API could not be reached from this server." };
+  }
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    return { ok: false, message: "The Graph API returned an unreadable response." };
+  }
+  if (!res.ok || (body as { error?: unknown }).error) {
+    const err = (body as { error?: { message?: string; type?: string } }).error;
+    return { ok: false, message: err?.message ?? `Graph API send failed (HTTP ${res.status}).` };
+  }
+  const wamid = (body as { messages?: { id?: string }[] }).messages?.[0]?.id;
+  if (typeof wamid !== "string" || !wamid) {
+    return { ok: false, message: "The Graph API accepted the send but did not return a message id." };
+  }
+  return { ok: true, wamid };
+}

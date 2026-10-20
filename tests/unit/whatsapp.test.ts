@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createHmac } from "node:crypto";
 import { decryptSecret, encryptSecret, readSecretBoxKey } from "@/lib/security/secret-box";
 import { readWhatsappConfig, whatsappConnectionProblem } from "@/modules/whatsapp/config";
-import { checkWabaOwnsPhoneNumber, fetchPhoneNumberInfo } from "@/modules/whatsapp/graph";
+import { checkWabaOwnsPhoneNumber, fetchPhoneNumberInfo, sendWhatsAppText } from "@/modules/whatsapp/graph";
 import { parseInboundPayload, verifyWebhookSignature } from "@/modules/whatsapp/webhooks";
 
 describe("readWhatsappConfig", () => {
@@ -102,6 +102,37 @@ describe("checkWabaOwnsPhoneNumber", () => {
       new Response(JSON.stringify({ data: [{ id: "999" }] }), { status: 200 })) as typeof fetch;
     const out = await checkWabaOwnsPhoneNumber(params, { fetchImpl: fakeFetch });
     expect(out).toEqual({ ok: true, value: { belongs: false } });
+  });
+});
+
+describe("sendWhatsAppText", () => {
+  const params = { accessToken: "tok", phoneNumberId: "PN", graphApiVersion: "v26.0", toPhone: "233540111222", text: "Hi", replyToWamid: "wamid.R1" };
+
+  it("posts the message with whatsapp product and reply context, returns the wamid", async () => {
+    let method = "";
+    let body: unknown;
+    let auth = "";
+    const fakeFetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      method = init?.method ?? "";
+      body = JSON.parse(String(init?.body));
+      auth = String((init?.headers as Record<string, string>)?.Authorization ?? "");
+      return new Response(JSON.stringify({ messaging_product: "whatsapp", messages: [{ id: "wamid.OUT9" }] }), { status: 200 });
+    }) as typeof fetch;
+    const out = await sendWhatsAppText(params, { fetchImpl: fakeFetch });
+    expect(out).toEqual({ ok: true, wamid: "wamid.OUT9" });
+    expect(method).toBe("POST");
+    expect(body).toMatchObject({ messaging_product: "whatsapp", to: "233540111222", type: "text", context: { message_id: "wamid.R1" } });
+    expect(auth).toBe("Bearer tok");
+  });
+
+  it("maps Graph errors to a readable message and omits the context when not replying", async () => {
+    const errFetch = (async () =>
+      new Response(JSON.stringify({ error: { message: "(#131026) Re-engagement", type: "O", code: 131026 } }), { status: 400 })) as typeof fetch;
+    const errOut = await sendWhatsAppText(params, { fetchImpl: errFetch });
+    expect(errOut).toEqual({ ok: false, message: "(#131026) Re-engagement" });
+    const fakeFetch = (async () => new Response(JSON.stringify({ messages: [{ id: "wamid.OUTA" }] }), { status: 200 })) as typeof fetch;
+    const okOut = await sendWhatsAppText({ ...params, replyToWamid: null }, { fetchImpl: fakeFetch });
+    expect(okOut.ok).toBe(true);
   });
 });
 
