@@ -161,10 +161,13 @@ InboundPipeline     whether the message was routed to AI (draft produced) or NOT
                     (owner-only conversation — see 3.3 takeover state)
 ```
 
-`LabConversation`/`LabTurn` stay exactly as they are in M3/M4 — a live WhatsApp
-conversation is represented by **the same draft/approval surface the owner already uses in
-the lab**, so the UI work in the pre-M6 redesign pays off immediately: a live conversation
-and a simulated one look and behave alike from the owner's perspective.
+`LabConversation`/`LabTurn` stay exactly as they are in M3/M4. **Deviation implemented in
+M6b (26-10-20):** live conversations get their own `WhatsAppConversation` table instead of
+reusing `LabConversation` — the lab's documented M3 safety property ("nothing here is ever
+sent to a real customer", never real customer data) must survive, and putting real
+customer messages into lab rows would break that invariant in data. The *deck/approval
+UX* is still shared: a WhatsApp conversation renders through the same review surface, and
+outbound drafts go through review before anything is ever sent (M6d).
 
 ### 3.3 Human control model (the core of M6)
 

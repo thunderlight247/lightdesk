@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { createHmac } from "node:crypto";
+import { decryptSecret, encryptSecret, readSecretBoxKey } from "@/lib/security/secret-box";
 import { readWhatsappConfig, whatsappConnectionProblem } from "@/modules/whatsapp/config";
 import { checkWabaOwnsPhoneNumber, fetchPhoneNumberInfo } from "@/modules/whatsapp/graph";
+import { parseInboundPayload, verifyWebhookSignature } from "@/modules/whatsapp/webhooks";
 
 describe("readWhatsappConfig", () => {
   it("reports all-missing config with no crash and no secret values", () => {
@@ -99,5 +102,84 @@ describe("checkWabaOwnsPhoneNumber", () => {
       new Response(JSON.stringify({ data: [{ id: "999" }] }), { status: 200 })) as typeof fetch;
     const out = await checkWabaOwnsPhoneNumber(params, { fetchImpl: fakeFetch });
     expect(out).toEqual({ ok: true, value: { belongs: false } });
+  });
+});
+
+describe("verifyWebhookSignature", () => {
+  const appSecret = "app-secret-test";
+  const body = JSON.stringify({ object: "whatsapp_business_account" });
+  const sign = (payload: string, secret: string) => `sha256=${createHmac("sha256", secret).update(payload, "utf8").digest("hex")}`;
+
+  it("accepts a correctly signed body", () => {
+    expect(verifyWebhookSignature(appSecret, body, sign(body, appSecret))).toBe(true);
+  });
+
+  it("rejects a body signed with the wrong secret, an edited body, a missing/malformed header", () => {
+    expect(verifyWebhookSignature(appSecret, body, sign(body, "other-secret"))).toBe(false);
+    expect(verifyWebhookSignature(appSecret, body + " ", sign(body, appSecret))).toBe(false);
+    expect(verifyWebhookSignature(appSecret, body, null)).toBe(false);
+    expect(verifyWebhookSignature(appSecret, body, "sha1=deadbeef")).toBe(false);
+    expect(verifyWebhookSignature(appSecret, body, "sha256=not-a-hex-hash")).toBe(false);
+  });
+});
+
+describe("parseInboundPayload", () => {
+  it("extracts the message, profile name and phone-number id", () => {
+    const out = parseInboundPayload({
+      entry: [{
+        id: "WA", changes: [{ field: "messages", value: {
+          metadata: { phone_number_id: "PNID" },
+          contacts: [{ profile: { name: "Ama Mensah" } }],
+          messages: [{ id: "wamid.T1", from: "233540000001", type: "text", text: { body: "How much is the iPhone 13?" }, timestamp: "1729400000" }],
+        } }],
+      }],
+    });
+    expect(out.messages).toHaveLength(1);
+    expect(out.messages[0]).toMatchObject({ phoneNumberId: "PNID", wamid: "wamid.T1", fromPhone: "233540000001", profileName: "Ama Mensah", text: "How much is the iPhone 13?", type: "text", timestamp: 1729400000 });
+    expect(out.statusEvents).toBe(0);
+  });
+
+  it("counts status events without treating them as messages", () => {
+    const out = parseInboundPayload({
+      entry: [{ changes: [{ field: "messages", value: {
+        metadata: { phone_number_id: "PNID" },
+        statuses: [{ id: "wamid.T1", status: "delivered" }, { id: "wamid.T2", status: "read" }],
+      } }] }],
+    });
+    expect(out.messages).toEqual([]);
+    expect(out.statusEvents).toBe(2);
+  });
+
+  it("truncates oversized text and survives garbage payloads", () => {
+    const long = "x".repeat(5000);
+    const out1 = parseInboundPayload({
+      entry: [{ changes: [{ field: "messages", value: {
+        metadata: { phone_number_id: "PNID" }, messages: [{ id: "wamid.T3", from: "1", type: "text", text: { body: long } }],
+      } }] }],
+    });
+    expect(out1.messages[0]?.text?.length).toBe(4000);
+    expect(parseInboundPayload(null)).toEqual({ messages: [], statusEvents: 0 });
+    expect(parseInboundPayload({ nonsense: true })).toEqual({ messages: [], statusEvents: 0 });
+    expect(parseInboundPayload({ entry: [{ changes: [{ field: "messages", value: { metadata: {}, messages: [{ from: "x" }] } }] }] }).messages).toEqual([]);
+  });
+});
+
+describe("secret-box", () => {
+  const key = Buffer.alloc(32, 7);
+  const envWithKey = { WHATSAPP_TOKEN_ENCRYPTION_KEY: key.toString("hex") };
+
+  it("round-trips a token", () => {
+    const ciphertext = encryptSecret("EAAtoken123", key);
+    expect(decryptSecret(ciphertext, key)).toBe("EAAtoken123");
+    expect(readSecretBoxKey(envWithKey)).toEqual(key);
+  });
+
+  it("refuses tampered ciphertext, wrong keys, and malformed config", () => {
+    const ciphertext = encryptSecret("EAAtoken123", key);
+    const short = ciphertext.slice(0, -4) + "AAAA";
+    expect(decryptSecret(short, Buffer.alloc(32, 7))).toBeNull();
+    expect(decryptSecret(ciphertext, Buffer.alloc(32, 8))).toBeNull();
+    expect(decryptSecret("not base64 data!!", key)).toBeNull();
+    expect(readSecretBoxKey({ WHATSAPP_TOKEN_ENCRYPTION_KEY: "tooshort" })).toBeNull();
   });
 });

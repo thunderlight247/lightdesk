@@ -810,6 +810,26 @@ continue only with the next explicitly requested task.
 
 ## 15. Change log
 
+-   **2026-10-20 (M6b core: webhook endpoint + inbound pipeline):** Implemented the M6 inbound
+    path end-to-end behind signatures. Prisma migration `m6_whatsapp_core` adds
+    `WhatsAppConnection` (token AES-256-GCM encrypted at rest via new
+    `lib/security/secret-box.ts`, `WHATSAPP_TOKEN_ENCRYPTION_KEY` required for any token work),
+    `WhatsAppConversation` (mode OWNER_ONLY by default — no AI call ever occurs in M6b), and
+    `WhatsAppMessage` (wamid globally unique = idempotent webhook dedupe). Documented deliberate
+    spec deviation in `docs/m6-whatsapp.md` §3.2: live traffic uses its own conversation table so
+    the M3 lab's "simulation only, never real customer data" property survives in data, while the
+    draft/approval UX is still shared. New public route `app/api/whatsapp/webhook/route.ts`: GET
+    echoes the challenge only for a matching verify token (403 otherwise, challenge now required),
+    POST fails closed without the app secret, verifies X-Hub-Signature-256 with
+    timing-safe comparison, rejects malformed bodies, records inbound messages and audit events
+    (`whatsapp.message.received`), always answers Meta quickly, and ignores messages for unknown/
+    DISCONNECTED numbers. `modules/whatsapp/webhooks.ts` parses payload defensively (caps text at
+    4000 chars, counts status events for M6d). `scripts/whatsapp-setup-connection.ts` binds
+    verified .env credentials to a business (one live read first, never stores an unverified
+    token; supports `--coexistence`). Gate: exit 0 with 84 unit + 158 integration tests, lint,
+    typecheck, build. NOT yet done: AI_ASSIST mode + takeover (M6c), outbound gate (M6d),
+    webhook URL registration in the Meta dashboard (needs a deployment URL), `WHATSAPP_APP_SECRET`
+    + `WHATSAPP_TOKEN_ENCRYPTION_KEY` still missing in the owner's `.env`.
 -   **2026-10-20 (Real Meta credentials verified live):** The project owner provided real WhatsApp
     Cloud API credentials (into `.env` only, never committed — gitignore verified). Initial run
     caught a real v26.0 drift: the phone-number node no longer exposes `account_id`, so the
