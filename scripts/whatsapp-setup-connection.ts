@@ -54,10 +54,19 @@ async function main() {
     return;
   }
   const v = info.value;
-  if (config.businessAccountId && await needsWabaCheck(config, v.id)) {
-    console.error("The phone number is not listed under the configured WABA. Nothing was stored.");
-    process.exitCode = 1;
-    return;
+  if (config.businessAccountId) {
+    const ownership = await needsWabaCheck(config, v.id);
+    if (!ownership.ok) {
+      console.error(`WABA cross-check FAILED: ${ownership.message}. Nothing was stored.`);
+      process.exitCode = 1;
+      return;
+    }
+    if (!ownership.value.belongs) {
+      console.error(`The phone number is not listed under WABA ${config.businessAccountId}. Nothing was stored.`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`WABA cross-check OK: the number belongs to WABA ${config.businessAccountId}.`);
   }
 
   const row = await prisma.whatsAppConnection.upsert({
@@ -91,15 +100,14 @@ async function main() {
   }
 }
 
-async function needsWabaCheck(config: ReturnType<typeof readWhatsappConfig>, phoneNumberId: string): Promise<boolean> {
+async function needsWabaCheck(config: ReturnType<typeof readWhatsappConfig>, phoneNumberId: string) {
   const { checkWabaOwnsPhoneNumber } = await import("@/modules/whatsapp/graph");
-  const out = await checkWabaOwnsPhoneNumber({
+  return checkWabaOwnsPhoneNumber({
     accessToken: config.accessToken!,
     wabaId: config.businessAccountId!,
     phoneNumberId,
     graphApiVersion: config.graphApiVersion,
   });
-  return !out.ok || !out.value.belongs;
 }
 
 main()
