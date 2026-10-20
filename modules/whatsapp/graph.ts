@@ -2,20 +2,15 @@
  * The ONLY place Cloud API HTTP calls are made (spec §3.1). Thin and typed; under test the
  * `fetchImpl` dependency is injected so no test ever touches the network — same idea as the
  * lab module's `MockProvider`.
- *
- * Error text returned by Graph can contain internals; callers get a normalized
- * { kind, message } where message is safe only because Graph error *messages* (not codes) are
- * the business-facing wording; raw payloads stay in logs the script prints, not in prompts.
  */
 export type GraphResult<T> = { ok: true; value: T } | { ok: false; message: string };
 
 export type PhoneNumberInfo = {
   id: string;
-  displayPhoneNumber: string; // as Graph returns it, e.g. "4915112345678"
+  displayPhoneNumber: string; // as Graph returns it, e.g. "233540000000"
   verifiedName: string | null;
   qualityRating: string | null; // GREEN / YELLOW / RED / UNKNOWN
   codeVerificationStatus: string | null;
-  wabaId: string | null; // when requested via ?fields=account_id
 };
 
 const GRAPH_BASE = "https://graph.facebook.com";
@@ -49,17 +44,14 @@ async function graphGetJson(
 }
 
 /**
- * One live call that proves the token works AND that it can see the phone number:
- * GET /{phoneNumberId}?fields=id,display_phone_number,verified_name,quality_rating,
- * code_verification_status,account_id
+ * One live call that proves the token works AND that it can see the phone number.
+ * Only stable, documented fields are requested (v26.0 dropped `account_id` here).
  */
 export async function fetchPhoneNumberInfo(
   params: { accessToken: string; phoneNumberId: string; graphApiVersion: string },
   opts: { fetchImpl?: typeof fetch } = {},
 ): Promise<GraphResult<PhoneNumberInfo>> {
-  const fields = [
-    "id", "display_phone_number", "verified_name", "quality_rating", "code_verification_status", "account_id",
-  ].join(",");
+  const fields = "id,display_phone_number,verified_name,quality_rating,code_verification_status";
   const out = await graphGetJson(`${params.graphApiVersion}/${params.phoneNumberId}`, { fields, access_token: params.accessToken }, opts);
   if (!out.ok) return out;
   const v = out.value;
@@ -73,7 +65,26 @@ export async function fetchPhoneNumberInfo(
       verifiedName: typeof v.verified_name === "string" ? v.verified_name : null,
       qualityRating: typeof v.quality_rating === "string" ? v.quality_rating : null,
       codeVerificationStatus: typeof v.code_verification_status === "string" ? v.code_verification_status : null,
-      wabaId: typeof v.account_id === "string" ? v.account_id : null,
     },
   };
+}
+
+/**
+ * Independent cross-check: the token can list the WABA's phone numbers, and our
+ * configured number id really belongs to that WABA. Data pagination is not needed
+ * for verification — one page is enough for any realistic number of lines.
+ */
+export async function checkWabaOwnsPhoneNumber(
+  params: { accessToken: string; wabaId: string; phoneNumberId: string; graphApiVersion: string },
+  opts: { fetchImpl?: typeof fetch } = {},
+): Promise<GraphResult<{ belongs: boolean }>> {
+  const out = await graphGetJson(
+    `${params.graphApiVersion}/${params.wabaId}/phone_numbers`,
+    { access_token: params.accessToken },
+    opts,
+  );
+  if (!out.ok) return out;
+  const list = (out.value.data ?? []) as { id?: string }[];
+  if (!Array.isArray(list)) return { ok: false, message: "The Graph API returned an unreadable phone-number list." };
+  return { ok: true, value: { belongs: list.some((n) => n && n.id === params.phoneNumberId) } };
 }

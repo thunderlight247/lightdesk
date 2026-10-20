@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readWhatsappConfig, whatsappConnectionProblem } from "@/modules/whatsapp/config";
-import { fetchPhoneNumberInfo } from "@/modules/whatsapp/graph";
+import { checkWabaOwnsPhoneNumber, fetchPhoneNumberInfo } from "@/modules/whatsapp/graph";
 
 describe("readWhatsappConfig", () => {
   it("reports all-missing config with no crash and no secret values", () => {
@@ -47,7 +47,6 @@ describe("fetchPhoneNumberInfo", () => {
           verified_name: "Kumasi Phones",
           quality_rating: "GREEN",
           code_verification_status: "VERIFIED",
-          account_id: "222",
         }),
         { status: 200 },
       )) as typeof fetch;
@@ -56,7 +55,6 @@ describe("fetchPhoneNumberInfo", () => {
     if (out.ok) {
       expect(out.value.displayPhoneNumber).toBe("233540000000");
       expect(out.value.verifiedName).toBe("Kumasi Phones");
-      expect(out.value.wabaId).toBe("222");
     }
   });
 
@@ -72,5 +70,34 @@ describe("fetchPhoneNumberInfo", () => {
     const fakeFetch = (async () => { throw new Error("ECONNREFUSED"); }) as typeof fetch;
     const out = await fetchPhoneNumberInfo(params, { fetchImpl: fakeFetch });
     expect(out).toEqual({ ok: false, message: "The Graph API could not be reached from this server." });
+  });
+
+  it("does not request the v26.0-removed account_id field", async () => {
+    let requestedUrl = "";
+    const fakeFetch = (async (input: RequestInfo | URL) => {
+      requestedUrl = String(input);
+      return new Response(JSON.stringify({ id: "111", display_phone_number: "1" }), { status: 200 });
+    }) as typeof fetch;
+    await fetchPhoneNumberInfo(params, { fetchImpl: fakeFetch });
+    expect(decodeURIComponent(requestedUrl)).toContain("fields=id,display_phone_number");
+    expect(requestedUrl).not.toContain("account_id");
+  });
+});
+
+describe("checkWabaOwnsPhoneNumber", () => {
+  const params = { accessToken: "test-token", wabaId: "222", phoneNumberId: "111", graphApiVersion: "v26.0" };
+
+  it("confirms ownership when the list contains the configured number", async () => {
+    const fakeFetch = (async () =>
+      new Response(JSON.stringify({ data: [{ id: "999" }, { id: "111" }] }), { status: 200 })) as typeof fetch;
+    const out = await checkWabaOwnsPhoneNumber(params, { fetchImpl: fakeFetch });
+    expect(out).toEqual({ ok: true, value: { belongs: true } });
+  });
+
+  it("reports a mismatch when the number is absent from the WABA list", async () => {
+    const fakeFetch = (async () =>
+      new Response(JSON.stringify({ data: [{ id: "999" }] }), { status: 200 })) as typeof fetch;
+    const out = await checkWabaOwnsPhoneNumber(params, { fetchImpl: fakeFetch });
+    expect(out).toEqual({ ok: true, value: { belongs: false } });
   });
 });

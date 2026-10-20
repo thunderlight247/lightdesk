@@ -810,6 +810,16 @@ continue only with the next explicitly requested task.
 
 ## 15. Change log
 
+-   **2026-10-20 (Real Meta credentials verified live):** The project owner provided real WhatsApp
+    Cloud API credentials (into `.env` only, never committed — gitignore verified). Initial run
+    caught a real v26.0 drift: the phone-number node no longer exposes `account_id`, so the
+    verify script was reworked to the stable two-call design (GET phone-number fields + independent
+    WABA ownership cross-check via `GET /{wabaId}/phone_numbers`); tests extended to 9 unit tests
+    and typecheck/lint re-passed (exit 0). Live result: token VALID, phone number reachable,
+    quality GREEN — but this is Meta's provisioned TEST number ("Test Number", +1 555-677-5612,
+    `code_verification_status: NOT_VERIFIED`), not yet a pilot business line; test numbers can
+    only message pre-registered recipients. Next runner decisions: a real number strategy
+    (coexistence vs. Cloud-only) and recipient allowlist entries for the test number.
 -   **2026-10-20 (M6 scaffolding + real-credential gate):** Added the M6 environment scaffold and a
     live credential-verification gate ahead of wiring a real Meta API key. `.env.example` documents
     the full WHATSAPP_* env set (app id/secret, access token, WABA + phone-number ids, webhook

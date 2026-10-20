@@ -9,7 +9,7 @@
  * A bad token, wrong number id, or unreachable API exits non-zero with a readable reason.
  */
 import { readWhatsappConfig, whatsappConnectionProblem } from "@/modules/whatsapp/config";
-import { fetchPhoneNumberInfo } from "@/modules/whatsapp/graph";
+import { checkWabaOwnsPhoneNumber, fetchPhoneNumberInfo } from "@/modules/whatsapp/graph";
 
 async function main() {
   const config = readWhatsappConfig();
@@ -38,9 +38,7 @@ async function main() {
     console.error(`Credential verification FAILED: ${info.message}`);
     process.exitCode = 1;
     return;
-  }
-
-  const v = info.value;
+  }  const v = info.value;
   console.log("Credential verification OK. The token can see this WhatsApp phone number:");
   console.log(JSON.stringify({
     phoneNumberId: v.id,
@@ -48,18 +46,33 @@ async function main() {
     verifiedName: v.verifiedName,
     qualityRating: v.qualityRating,
     codeVerificationStatus: v.codeVerificationStatus,
-    wabaId: v.wabaId,
   }, null, 2));
-
-  if (config.businessAccountId && v.wabaId && v.wabaId !== config.businessAccountId) {
-    console.error(`WABA mismatch: .env says ${config.businessAccountId} but the number belongs to ${v.wabaId}.`);
-    process.exitCode = 1;
-    return;
-  }
 
   if (v.codeVerificationStatus && v.codeVerificationStatus !== "VERIFIED") {
     console.warn(`Note: code_verification_status is ${v.codeVerificationStatus} — the number must be verified before real messaging.`);
   }
+
+  /* Independent WABA ownership cross-check. */
+  if (config.businessAccountId) {
+    const ownership = await checkWabaOwnsPhoneNumber({
+      accessToken: config.accessToken!,
+      wabaId: config.businessAccountId,
+      phoneNumberId: config.phoneNumberId!,
+      graphApiVersion: config.graphApiVersion,
+    });
+    if (!ownership.ok) {
+      console.error(`WABA cross-check FAILED: ${ownership.message}`);
+      process.exitCode = 1;
+      return;
+    }
+    if (!ownership.value.belongs) {
+      console.error(`WABA mismatch: phone number ${config.phoneNumberId} is not listed under WABA ${config.businessAccountId} with this token.`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`WABA cross-check OK: number belongs to WABA ${config.businessAccountId}.`);
+  }
+
   console.log("Safe next step: this proves the API key. Webhook setup and sending come with M6b/M6d.");
 }
 
