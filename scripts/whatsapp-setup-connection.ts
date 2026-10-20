@@ -91,7 +91,6 @@ async function main() {
   }
 }
 
-type PhoneNumberInfoLike = { id: string };
 async function needsWabaCheck(config: ReturnType<typeof readWhatsappConfig>, phoneNumberId: string): Promise<boolean> {
   const { checkWabaOwnsPhoneNumber } = await import("@/modules/whatsapp/graph");
   const out = await checkWabaOwnsPhoneNumber({

@@ -15,6 +15,19 @@ export const dynamic = "force-dynamic";
 
 const noStore = { "Cache-Control": "no-store" } as const;
 
+/** Middleware guard for POST: reads the raw body ONCE (Request bodies are single-use),
+ *  verifies it against WHATSAPP_APP_SECRET via x-hub-signature-256 before anything else
+ *  happens, and either returns a rejection Response or the verified raw body. */
+async function verifyWebhookGuard(req: Request): Promise<{ ok: true; body: string } | { ok: false; response: Response }> {
+  const config = readWhatsappConfig();
+  if (!config.appSecret) return { ok: false, response: new Response("forbidden", { status: 403, headers: noStore }) };
+  const body = await req.text();
+  if (!verifyWebhookSignature(config.appSecret, body, req.headers.get("x-hub-signature-256"))) {
+    return { ok: false, response: new Response("forbidden", { status: 403, headers: noStore }) };
+  }
+  return { ok: true, body };
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const config = readWhatsappConfig();
@@ -31,15 +44,11 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const config = readWhatsappConfig();
-  if (!config.appSecret) return new Response("forbidden", { status: 403, headers: noStore });
-  const raw = await req.text();
-  if (!verifyWebhookSignature(config.appSecret, raw, req.headers.get("x-hub-signature-256"))) {
-    return new Response("forbidden", { status: 403, headers: noStore });
-  }
+  const guarded = await verifyWebhookGuard(req);
+  if (!guarded.ok) return guarded.response;
   let payload: unknown;
   try {
-    payload = JSON.parse(raw);
+    payload = JSON.parse(guarded.body);
   } catch {
     return new Response("bad request", { status: 400, headers: noStore });
   }

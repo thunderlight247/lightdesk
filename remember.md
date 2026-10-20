@@ -810,6 +810,19 @@ continue only with the next explicitly requested task.
 
 ## 15. Change log
 
+-   **2026-10-20 (Real webhook credentials wired + signature middleware):** The owner added
+    WHATSAPP_APP_SECRET and WHATSAPP_TOKEN_ENCRYPTION_KEY to `.env` (only in `.env`, never
+    committed). The webhook POST route was restructured into an explicit verify-first middleware
+    guard (`verifyWebhookGuard`): it reads the body once (single-use), verifies
+    X-Hub-Signature-256 against the app secret before any parsing, and returns the verified body —
+    fixing a double-read bug caught while wiring it; a stale leftover block was removed and an
+    unused type dropped from the setup script (lint back to the single pre-existing warning).
+    Live smoke against the dev server with the real values: GET handshake echoes the challenge for
+    `lightdesk_secure_token` (wrong token 403), POST with a bad signature 403, POST with a correct
+    HMAC 200 `{received:0,unknown:1}` (no business connection bound to that native payload's
+    PN1 yet — expected). Secret-box round-trip with the real key verified: 32-byte key loads,
+    encrypt/decrypt round-trip works, tampered ciphertext and wrong-key both rejected.
+    Full `npm run check`: exit 0 (84 unit + 158 integration, lint, typecheck, build).
 -   **2026-10-20 (M6b core: webhook endpoint + inbound pipeline):** Implemented the M6 inbound
     path end-to-end behind signatures. Prisma migration `m6_whatsapp_core` adds
     `WhatsAppConnection` (token AES-256-GCM encrypted at rest via new
