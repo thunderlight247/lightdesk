@@ -810,6 +810,11 @@ continue only with the next explicitly requested task.
 
 ## 15. Change log
 
+-   **2026-10-20 (Post-fix live re-run of M4 battery):** Re-ran the full M4 scenario battery live
+    (`scripts/m4-live-verify.ts`, isolated tenant) after the pre-check hardening. Scenario C now
+    uses the deterministic path: `source: RULES`, `usedAi: false`, 0 tokens, safe payment-holding
+    reply, conversation escalated — the M4 regex-gap finding is closed end-to-end. All other
+    scenarios (A, B1/B2/B3, D) behaved identically to the earlier runs.
 -   **2026-10-20 (Payment-claim pre-check hardening):** Extended the deterministic
     `PAYMENT_CLAIM` regex in `modules/lab/rules.ts` to close the gap found during the M4
     re-verification: adverbs in any order ("I just sent", "I have already paid"), contractions

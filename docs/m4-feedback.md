@@ -125,6 +125,11 @@ tests** pass, plus typecheck.
    but the original M4 claim of a *zero-AI* deterministic block did not hold for this phrasing.
    Recommended hardening: extend the regex (e.g. optional `just`/`already`/`now` adverbs, and
    "confirm + payment/dispatch" proximity) and add a regression test.
+   **Resolved 2026-10-20:** the `PAYMENT_CLAIM` regex was hardened (adverbs in any order,
+   contractions, we-subject, "money sent", "did you confirm", "confirm … dispatch") with unit
+   regression tests, and a full live re-run of this battery confirmed scenario C is now blocked
+   deterministically — `source: RULES`, zero AI tokens, safe reply, escalated conversation. All
+   five other scenarios behaved identically to the run above.
 4. **Discount/commitment guard intact.** The discount-pressure message (D) is intercepted
    server-side with zero tokens; the reply contains no digits and never commits to a price.
 5. **Provider behavior unchanged.** Grounded, tone-respecting drafts with correct tone values; no
