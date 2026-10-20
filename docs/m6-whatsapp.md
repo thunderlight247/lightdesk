@@ -310,3 +310,26 @@ script-prepared but **not executed**; that is an honest limitation recorded in
    reference (media-ID) and shown as a placeholder. Supporting image replies
    (catalogue-photo answers!) needs M5's already-built catalogue photos in the
    graph payload — a natural follow-up inside this milestone if time allows.
+
+---
+
+## 7. Assistant communication & escalation policy (owner-provided, 2026-10-20)
+
+The project owner supplied a persona brief for the assistant core. It is recorded here as
+M6 product material, mapped onto the building blocks that already exist; parts describing
+the owner's own operational ecosystem (internal org, client-outreach pipelines) are
+*excluded from the codebase on purpose* — LightDesk ships as a product for arbitrary
+businesses, so it must not encode one company's internal identity.
+
+| Owner requirement | Implemented through |
+|---|---|
+| Direct, professional, peer-level tone; **no generic fluff** (no "Hello! I'm an AI…") | M2 approved `greeting` / `tone` / `sign_off` entries + a system-prompt instruction that assistant drafts are to-the-point; drafts rendering in the lab review panel enforce scannable, mobile-friendly short paragraphs |
+| Concise, WhatsApp-optimized formatting (short paragraphs, minimal bullets) | Reply-draft prompt rule: no heavy markdown (WhatsApp plain text), short paragraphs; the draft length cap already in the M3 generation config applies to live replies too |
+| Never assume pricing/timelines/architecture; ask targeted questions when underspecified | Structural enforcement, not just a prompt rule: prices may only come from approved M5 catalogue items with evidence; underspecified asks land in `NEEDS_INFORMATION` with `missingInformation` listed, asking the customer a targeted question |
+| Instantly escalate on: complex custom-engineering sign-off, customer frustration, requests for founder/human intervention | Extends the M4 deterministic pre-check: new trigger classes (sign-off requests: "custom build", "bespoke", "quote/approval for a project"; frustration/insults; "talk to a human/boss/owner") escalate to the owner BEFORE any AI call — same RULES path, zero tokens |
+| Route to human review for anything sensitive | Already the M6 default: OWNER_ONLY conversations + explicit owner send gate (§3.3); the pre-check above only widens what never reaches the AI |
+
+Implementation notes: the escalation-phrases list is per-business config (owner-editable in
+the BIP escalation entry) merged with safe *floor* triggers that ship enabled for every
+business; everything decisive stays deterministic so no AI token is ever spent on a
+message that was always going to a human.
