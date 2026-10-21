@@ -12,6 +12,7 @@ export type WhatsappConfig = {
   businessAccountId: string | null; // WABA id, numeric string
   phoneNumberId: string | null; // phone-number id, numeric string
   webhookVerifyToken: string | null; // arbitrary string we choose for webhook GET verification
+  signupConfigId: string | null; // Meta embedded-signup configuration id (setup: WHATSAPP_SIGNUP_CONFIG_ID)
   graphApiVersion: string; // e.g. "v26.0"
   issues: string[];
 };
@@ -40,6 +41,7 @@ export function readWhatsappConfig(env: Record<string, string | undefined> = pro
     businessAccountId: raw("WHATSAPP_BUSINESS_ACCOUNT_ID"),
     phoneNumberId: raw("WHATSAPP_PHONE_NUMBER_ID"),
     webhookVerifyToken: raw("WHATSAPP_WEBHOOK_VERIFY_TOKEN"),
+    signupConfigId: raw("WHATSAPP_SIGNUP_CONFIG_ID"),
     graphApiVersion,
     issues,
   };

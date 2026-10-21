@@ -145,3 +145,99 @@ export async function sendWhatsAppText(
   }
   return { ok: true, wamid };
 }
+
+// ---- M6d Embedded Signup: token exchange and number discovery ---------------------------
+
+export type ExchangedToken = { ok: true; accessToken: string; expiresIn: number | null; tokenType: string | null } | { ok: false; message: string };
+
+/**
+ * Step 1 of Embedded Signup: the browser handed us a short-lived `code`; we exchange it for a
+ * business access token. GET /oauth/access_token?client_id&client_secret&code — the ONLY Graph
+ * call that takes the app secret (server-side only; the browser never sees it).
+ */
+export async function exchangeCodeForToken(
+  params: { appId: string; appSecret: string; code: string; graphApiVersion: string },
+  opts: { fetchImpl?: typeof fetch } = {},
+): Promise<ExchangedToken> {
+  const out = await graphGetJson(
+    `${params.graphApiVersion}/oauth/access_token`,
+    { client_id: params.appId, client_secret: params.appSecret, code: params.code },
+    opts,
+  );
+  if (!out.ok) return out;
+  const accessToken = out.value.access_token;
+  const expiresIn = out.value.expires_in;
+  const tokenType = out.value.token_type;
+  if (typeof accessToken !== "string" || accessToken.length === 0) {
+    return { ok: false, message: "The token exchange response did not include an access token." };
+  }
+  return { ok: true, accessToken, expiresIn: typeof expiresIn === "number" ? expiresIn : null, tokenType: typeof tokenType === "string" ? tokenType : null };
+}
+
+/**
+ * Step 2: upgrade the short-lived token to a long-lived token within Meta's 24-hour window.
+ * GET /oauth/access_token with grant_type=fb_exchange_token&fb_exchange_token=<short>.
+ */
+export async function upgradeToLongLivedToken(
+  params: { appId: string; appSecret: string; shortLivedToken: string; graphApiVersion: string },
+  opts: { fetchImpl?: typeof fetch } = {},
+): Promise<ExchangedToken> {
+  const out = await graphGetJson(
+    `${params.graphApiVersion}/oauth/access_token`,
+    { grant_type: "fb_exchange_token", client_id: params.appId, client_secret: params.appSecret, fb_exchange_token: params.shortLivedToken },
+    opts,
+  );
+  if (!out.ok) return out;
+  const accessToken = out.value.access_token;
+  const expiresIn = out.value.expires_in;
+  const tokenType = out.value.token_type;
+  if (typeof accessToken !== "string" || accessToken.length === 0) {
+    return { ok: false, message: "The token upgrade response did not include an access token." };
+  }
+  return { ok: true, accessToken, expiresIn: typeof expiresIn === "number" ? expiresIn : null, tokenType: typeof tokenType === "string" ? tokenType : null };
+}
+
+export type BusinessListing = { id: string; name: string | null };
+export type PhoneNumberListing = { id: string; displayPhoneNumber: string | null; name: string | null };
+
+/** With a business token: which WABAs does this owner control through our app? */
+export async function listWabas(
+  params: { accessToken: string; graphApiVersion: string },
+  opts: { fetchImpl?: typeof fetch } = {},
+): Promise<GraphResult<BusinessListing[]>> {
+  const out = await graphGetJson(`${params.graphApiVersion}/me/businesses`, { fields: "id,name", access_token: params.accessToken }, opts);
+  if (!out.ok) return out;
+  const list = out.value.data;
+  if (!Array.isArray(list)) return { ok: false, message: "The Graph API returned an unreadable WABA list." };
+  return {
+    ok: true,
+    value: list
+      .filter((b): b is { id: string; name?: unknown } => !!b && typeof b.id === "string")
+      .map((b) => ({ id: b.id, name: typeof b.name === "string" ? b.name : null })),
+  };
+}
+
+/** Numbers registered under one WABA, so the owner can pick which one LightDesk should drive. */
+export async function listWabaPhoneNumbers(
+  params: { accessToken: string; wabaId: string; graphApiVersion: string },
+  opts: { fetchImpl?: typeof fetch } = {},
+): Promise<GraphResult<PhoneNumberListing[]>> {
+  const out = await graphGetJson(
+    `${params.graphApiVersion}/${params.wabaId}/phone_numbers`,
+    { fields: "id,display_phone_number,verified_name", access_token: params.accessToken },
+    opts,
+  );
+  if (!out.ok) return out;
+  const list = out.value.data;
+  if (!Array.isArray(list)) return { ok: false, message: "The Graph API returned an unreadable phone-number list." };
+  return {
+    ok: true,
+    value: list
+      .filter((n): n is { id: string; display_phone_number?: unknown; verified_name?: unknown } => !!n && typeof n.id === "string")
+      .map((n) => ({
+        id: n.id,
+        displayPhoneNumber: typeof n.display_phone_number === "string" ? n.display_phone_number : null,
+        name: typeof n.verified_name === "string" ? n.verified_name : null,
+      })),
+  };
+}

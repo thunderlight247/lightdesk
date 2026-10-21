@@ -10,7 +10,7 @@ const testPasswordHash = () => (cachedHash ??= hashPassword(TEST_PASSWORD));
 
 export async function resetDb() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "AuditEvent","Invitation","BusinessMembership","Session","Business","User" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "AuditEvent","Invitation","BusinessMembership","Session","Business","User","WhatsAppPendingConnection" RESTART IDENTITY CASCADE',
   );
   cookieStore.clear();
 }

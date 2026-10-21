@@ -26,7 +26,8 @@ export default async function WhatsAppInboxPage({ params }: { params: Promise<{ 
       {!connection ? (
         <section className="card space-y-2 border-dashed p-5">
           <h2 className="font-semibold text-zinc-900">No WhatsApp number connected</h2>
-          <p className="text-sm text-zinc-600">Ask your platform administrator to complete Meta setup and connect a WhatsApp Business number.</p>
+          <p className="text-sm text-zinc-600">Connect your business&apos;s own WhatsApp number through Meta&apos;s official Cloud API — owners can do it from the connection settings; otherwise ask your platform administrator.</p>
+          <Link href={`${base}/settings`} className="inline-block text-sm text-brand-700 underline">Open connection settings →</Link>
         </section>
       ) : conversations.length === 0 ? (
         <p className="card border-dashed p-6 text-center text-sm text-zinc-600">No customer conversations yet. New WhatsApp messages will appear here.</p>

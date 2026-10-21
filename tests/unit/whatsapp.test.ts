@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { createHmac } from "node:crypto";
 import { decryptSecret, encryptSecret, readSecretBoxKey } from "@/lib/security/secret-box";
 import { readWhatsappConfig, whatsappConnectionProblem } from "@/modules/whatsapp/config";
-import { checkWabaOwnsPhoneNumber, fetchPhoneNumberInfo, sendWhatsAppText } from "@/modules/whatsapp/graph";
+import {
+  checkWabaOwnsPhoneNumber, exchangeCodeForToken, fetchPhoneNumberInfo, listWabas,
+  listWabaPhoneNumbers, sendWhatsAppText, upgradeToLongLivedToken,
+} from "@/modules/whatsapp/graph";
 import { parseInboundPayload, verifyWebhookSignature, verifyWebhookToken } from "@/modules/whatsapp/webhooks";
 
 describe("readWhatsappConfig", () => {
@@ -230,5 +233,73 @@ describe("secret-box", () => {
     expect(decryptSecret(ciphertext, Buffer.alloc(32, 8))).toBeNull();
     expect(decryptSecret("not base64 data!!", key)).toBeNull();
     expect(readSecretBoxKey({ WHATSAPP_TOKEN_ENCRYPTION_KEY: "tooshort" })).toBeNull();
+  });
+});
+
+// ---- M6d Embedded Signup: Graph token exchange + discovery -------------------------------
+
+const urlOf = (input: RequestInfo | URL) => (typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url);
+
+function graphFetch(routes: { match: string; respond: (url: string) => Response }[]) {
+  const calls: string[] = [];
+  const impl = (async (input: RequestInfo | URL) => {
+    const url = urlOf(input);
+    calls.push(url);
+    const route = routes.find((r) => url.includes(r.match));
+    return route ? route.respond(url) : new Response(JSON.stringify({ error: { message: "route not stubbed" } }), { status: 400 });
+  }) as unknown as typeof fetch;
+  return { impl, calls };
+}
+
+const jsonOk = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+
+const GRAPH = "v26.0";
+
+describe("exchangeCodeForToken / upgradeToLongLivedToken", () => {
+  it("exchanges the signup code server-side and reports the expiry", async () => {
+    const { impl, calls } = graphFetch([{ match: "/oauth/access_token", respond: () => jsonOk({ access_token: "SHORT-TOKEN", token_type: "bearer", expires_in: 43200 }) }]);
+    const out = await exchangeCodeForToken({ appId: "APP", appSecret: "SECRET", code: "A9z_0", graphApiVersion: GRAPH }, { fetchImpl: impl });
+    expect(out).toEqual({ ok: true, accessToken: "SHORT-TOKEN", expiresIn: 43200, tokenType: "bearer" });
+    expect(calls[0]).toContain("client_id=APP");
+    expect(calls[0]).toContain("code=A9z_0");
+  });
+
+  it("surfaces a Graph rejection without echoing bodies or secrets", async () => {
+    const { impl } = graphFetch([{ match: "/oauth/access_token", respond: () => new Response(JSON.stringify({ error: { message: "Invalid authorization code" } }), { status: 400 }) }]);
+    const out = await exchangeCodeForToken({ appId: "APP", appSecret: "SECRET", code: "BAD", graphApiVersion: GRAPH }, { fetchImpl: impl });
+    expect(out).toEqual({ ok: false, message: "Invalid authorization code" });
+  });
+
+  it("upgrades to a long-lived token and rejects a body without an access token", async () => {
+    const upgraded = graphFetch([{ match: "/oauth/access_token", respond: () => jsonOk({ access_token: "LONG-LIVED", token_type: "bearer", expires_in: 5184000 }) }]);
+    const ok = await upgradeToLongLivedToken({ appId: "APP", appSecret: "SECRET", shortLivedToken: "SHORT", graphApiVersion: GRAPH }, { fetchImpl: upgraded.impl });
+    expect(ok.ok).toBe(true);
+    expect(ok.ok && ok.accessToken).toBe("LONG-LIVED");
+    expect(upgraded.calls[0]).toContain("grant_type=fb_exchange_token");
+
+    const empty = graphFetch([{ match: "/oauth/access_token", respond: () => jsonOk({ extras: 1 }) }]);
+    const fail = await upgradeToLongLivedToken({ appId: "APP", appSecret: "SECRET", shortLivedToken: "SHORT", graphApiVersion: GRAPH }, { fetchImpl: empty.impl });
+    expect(fail).toEqual({ ok: false, message: "The token upgrade response did not include an access token." });
+  });
+});
+
+describe("listWabas / listWabaPhoneNumbers", () => {
+  it("lists businesses and their phone numbers defensively over partial data", async () => {
+    const { impl } = graphFetch([
+      { match: "/me/businesses", respond: () => jsonOk({ data: [{ id: "WABA1", name: "Owner's WABA" }, { noId: true }, { id: "WABA2" }] }) },
+      { match: "/WABA1/phone_numbers", respond: () => jsonOk({ data: [{ id: "111", display_phone_number: "+1 555-0100", verified_name: "Alpha" }, { id: "222", display_phone_number: null }] }) },
+      { match: "/WABA2/phone_numbers", respond: () => jsonOk({ data: [] }) },
+    ]);
+    const wabas = await listWabas({ accessToken: "T", graphApiVersion: GRAPH }, { fetchImpl: impl });
+    expect(wabas.ok).toBe(true);
+    if (wabas.ok) expect(wabas.value).toEqual([{ id: "WABA1", name: "Owner's WABA" }, { id: "WABA2", name: null }]);
+    const nums = await listWabaPhoneNumbers({ accessToken: "T", wabaId: "WABA1", graphApiVersion: GRAPH }, { fetchImpl: impl });
+    expect(nums.ok).toBe(true);
+    if (nums.ok) {
+      expect(nums.value).toEqual([
+        { id: "111", displayPhoneNumber: "+1 555-0100", name: "Alpha" },
+        { id: "222", displayPhoneNumber: null, name: null },
+      ]);
+    }
   });
 });

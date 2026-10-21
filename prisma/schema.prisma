@@ -507,6 +507,21 @@ model WhatsAppMessage {
 // latency), idempotency (per conversation + wamid) and the per-business hourly rate cap shared
 // with the lab all read from here. `requestedById` is null for system-triggered drafts: a
 // WhatsApp webhook has no LightDesk user behind it.
+// M6d Embedded Signup: while an owner goes through Meta's signup flow, the exchanged
+// long-lived business token must WAIT on the server between the two UI steps (exchange →
+// number choice). It is stored AES-256-GCM encrypted (same secret box as connections),
+// never sent back to the browser, and is deleted once used or after a short TTL.
+model WhatsAppPendingConnection {
+  id              String   @id @default(cuid())
+  businessId      String   @unique
+  tokenCiphertext String
+  createdAt       DateTime @default(now())
+
+  // Deliberately NO relation to Business: pending tokens are transient and must not
+  // cascade-delete business history; rows are cleaned up by the TTL in the onboarding module.
+  @@index([createdAt])
+}
+
 model WhatsAppGeneration {
   id               String              @id @default(cuid())
   conversationId   String

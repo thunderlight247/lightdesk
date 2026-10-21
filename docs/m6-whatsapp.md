@@ -379,3 +379,51 @@ Implementation notes: the escalation-phrases list is per-business config (owner-
 the BIP escalation entry) merged with safe *floor* triggers that ship enabled for every
 business; everything decisive stays deterministic so no AI token is ever spent on a
 message that was always going to a human.
+
+## 9. M6d implementation notes: Embedded Signup (2026-10-21)
+
+The remaining M6d piece — the onboarding UI — is implemented as two flows on the business
+console page `/businesses/[businessId]/whatsapp/settings`:
+
+1. **Connect.** The browser loads Meta's SDK and opens the real Embedded Signup window
+   (`FB.login` with `config_id`, `response_type: 'code'`). **Only a short-lived `code` ever
+   travels through the browser.** Server-side (`modules/whatsapp/onboarding.ts`):
+   - `startEmbeddedSignup` exchanges the code for a business token
+     (`exchangeCodeForToken`), upgrades it to a long-lived token
+     (`upgradeToLongLivedToken` — Meta requires this within 24h), then discovers the owner's
+     WABAs and phone numbers with that token (`listWabas`, `listWabaPhoneNumbers`).
+   - One number (the common pilot case) → the number is verified live (pre-flight
+     `fetchPhoneNumberInfo` + WABA ownership cross-check) and bound immediately.
+   - Several numbers → the long-lived token is stored **AES-256-GCM encrypted, server-side
+     only** in `WhatsAppPendingConnection` (10-minute TTL, never sent to the browser) and the
+     owner picks the number; `completeEmbeddedSignupChoice` re-verifies the choice against
+     Meta before binding. Every attempt that fails before activation stores nothing.
+   - The connection row (encrypted token, `tokenExpiresAt`, status, display number,
+     coexistence flag) replaces any previous one, and `whatsapp.connection.connected` is
+     audited. Tokens are never logged and never included in UI results.
+2. **Settings.** Connection status, display number, token expiry ("refresh by re-running the
+   signup"), conversation count, the monthly 1,000-free-tier meter, and owner-only
+   disconnect (`status DISCONNECTED`, history kept, audited, pending sessions cleaned).
+
+Permissions: connecting, choosing and disconnecting are **OWNER-only** — binding the account
+is deliberately more sensitive than sending messages (admins can send but cannot re-bind).
+`getSignupState` is readable by all members for a read-only view.
+
+Configuration env vars: `WHATSAPP_APP_ID`, `WHATSAPP_APP_SECRET`,
+`WHATSAPP_SIGNUP_CONFIG_ID` (the embedded-signup configuration id from the Tech-Provider app)
+plus the existing `WHATSAPP_TOKEN_ENCRYPTION_KEY`. When any of these are missing, the settings
+page shows safe guidance instead of a broken form, and the
+`scripts/whatsapp-setup-connection.ts` path (verified-token flow) still works.
+Graph endpoints used by the exchange flow are in `modules/whatsapp/graph.ts` only, with
+injectable `fetchImpl` for tests (same pattern as every other Graph call).
+
+Tests: `tests/integration/whatsapp-connect.test.ts` (owner-only matrix, single-number
+autobind with encrypted token and expiry, multi-number choose with TTL and
+cross-tenant Not Found, invalid code, pre-flight/cross-check failure audits nothing stored,
+disconnect keeping history) and unit tests for the four new Graph helpers.
+
+NOT yet done (honest boundary): a *live* Embedded Signup smoke — clicking through Meta's real
+window requires the Tech-Provider app + configuration id bound to a verified Business
+Portfolio and cannot be exercised without those runner-provided inputs. The flow is
+script-prepared and integration-tested with a fake Graph instead; the boundary is recorded in
+`remember.md`.

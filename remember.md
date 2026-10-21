@@ -810,6 +810,28 @@ continue only with the next explicitly requested task.
 
 ## 15. Change log
 
+-   **2026-10-21 (M6d Embedded Signup UI + onboarding service):** Implemented the last M6d
+    piece: owner-driven connection of a real WhatsApp number through Meta's Embedded Signup.
+    New graph helpers (code exchange, long-lived token upgrade, WABA/number discovery) in
+    `modules/whatsapp/graph.ts`; new env `WHATSAPP_SIGNUP_CONFIG_ID` surfaced by
+    `readWhatsappConfig`. New `WhatsAppPendingConnection` table (additive migration
+    `20261021012917_m6d_embedded_signup_pending`) holds the exchanged
+    long-lived token AES-256-GCM-encrypted between the two UI steps with a 10-minute TTL;
+    tokens never round-trip through the browser and never reach logs or audit metadata.
+    `modules/whatsapp/onboarding.ts` implements the flow: OWNER-only `startEmbeddedSignup`
+    (exchange → upgrade → discovery; single number auto-binds after a live pre-flight read +
+    WABA ownership cross-check; multiple numbers wait for the owner's encrypted choice via
+    `completeEmbeddedSignupChoice`) and owner-only `disconnectWhatsAppConnection` (soft
+    disconnect, history kept, pending cleaned, audited). Console page
+    `/businesses/[businessId]/whatsapp/settings` renders connection state, token expiry,
+    meter and the two flows; the inbox's empty state now links there. Members remain
+    read-only. Tests: 10 integration (`tests/integration/whatsapp-connect.test.ts` — owner
+    matrix, auto-bind with expiry, choose flow incl. cross-tenant NotFound and TTL, invalid
+    code, failure audits, disconnect) + 4 unit graph tests; `tests/helpers/db.ts` now also
+    truncates the pending table (its rows are deliberately not FK-cascade-owned). Remaining
+    honest boundary: a LIVE signup click-through needs the Tech-Provider app + config id
+    bound to a verified Business Portfolio (runner-provided inputs); flow is
+    integration-tested with a fake Graph and documented in `docs/m6-whatsapp.md` §9.
 -   **2026-10-21 (M6c: AI_ASSIST drafts + takeover state machine):** Implemented the last core
     M6 phase: per-conversation AI assistance, always with a human send gate. Additive migration
     `20261021002937_m6c_whatsapp_drafts`: `WhatsAppMessageStatus` gains `DRAFT`; new
