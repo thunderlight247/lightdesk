@@ -70,12 +70,15 @@ describe("webhook GET subscription handshake", () => {
     expect(await res.text()).toBe("CHALLENGE123");
   });
 
-  it("rejects a wrong token; and 403 without challenge", async () => {
+  it("rejects a wrong token; and 403 without challenge or configuration", async () => {
     before();
     const bad = await GET(new Request("http://x/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=C"));
     expect(bad.status).toBe(403);
     const noChallenge = await GET(new Request("http://x/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=test-verify-token"));
     expect(noChallenge.status).toBe(403);
+    delete process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
+    const noConfig = await GET(new Request("http://x/api/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=test-verify-token&hub.challenge=C"));
+    expect(noConfig.status).toBe(403);
   });
 });
 
@@ -89,15 +92,45 @@ describe("webhook POST inbound pipeline", () => {
     expect(await prisma.whatsAppConnection.count()).toBe(0);
   });
 
-  it("rejects a bad signature with 403 and stores nothing", async () => {
+  it("rejects incorrect, missing, or malformed signatures before event processing", async () => {
     await makeConnection();
-    const bad = new Request("http://x/api/whatsapp/webhook", {
-      method: "POST", headers: { "x-hub-signature-256": "sha256=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" }, body: inboundBody,
-    });
-    const res = await POST(bad);
-    expect(res.status).toBe(403);
+    const requests = [
+      new Request("http://x/api/whatsapp/webhook", {
+        method: "POST", headers: { "x-hub-signature-256": `sha256=${"f".repeat(64)}` }, body: inboundBody,
+      }),
+      new Request("http://x/api/whatsapp/webhook", { method: "POST", body: inboundBody }),
+      new Request("http://x/api/whatsapp/webhook", {
+        method: "POST", headers: { "x-hub-signature-256": "sha256=not-a-signature" }, body: inboundBody,
+      }),
+    ];
+    for (const req of requests) expect((await POST(req)).status).toBe(403);
     expect(await prisma.whatsAppMessage.count()).toBe(0);
     expect(await prisma.whatsAppConversation.count()).toBe(0);
+    expect(await prisma.auditEvent.count({ where: { action: "whatsapp.message.received" } })).toBe(0);
+  });
+
+  it("rejects a body changed after signing, including JSON formatting changes", async () => {
+    await makeConnection();
+    const signedBody = JSON.stringify({ entry: [{ changes: [{ field: "messages", value: { metadata: { phone_number_id: "PN1" }, messages: [{ id: "wamid.FORMAT", from: "233540000001", type: "text", text: { body: "raw body" } }] } }] }] });
+    const formattedBody = JSON.stringify(JSON.parse(signedBody), null, 2);
+    const req = new Request("http://x/api/whatsapp/webhook", {
+      method: "POST", headers: { "x-hub-signature-256": sign(signedBody) }, body: formattedBody,
+    });
+    expect((await POST(req)).status).toBe(403);
+    expect(await prisma.whatsAppMessage.count()).toBe(0);
+    expect(await prisma.whatsAppConversation.count()).toBe(0);
+    expect(await prisma.auditEvent.count({ where: { action: "whatsapp.message.received" } })).toBe(0);
+  });
+
+  it("rejects invalid UTF-8 after signature verification without storing an event", async () => {
+    await makeConnection();
+    const body = new Uint8Array([0xff, 0xfe, 0x7b, 0x7d]);
+    const signature = `sha256=${createHmac("sha256", APP_SECRET).update(body).digest("hex")}`;
+    const req = new Request("http://x/api/whatsapp/webhook", {
+      method: "POST", headers: { "x-hub-signature-256": signature }, body,
+    });
+    expect((await POST(req)).status).toBe(400);
+    expect(await prisma.whatsAppMessage.count()).toBe(0);
   });
 
   it("stores a signed inbound message, conversation defaults to OWNER_ONLY, audit recorded", async () => {

@@ -3,18 +3,12 @@ import type { LabDraftState, LabResultStatus } from "@prisma/client";
 import { prisma } from "@/lib/db/client";
 import { ConflictError, ForbiddenError, NotFoundError, RateLimitError, ValidationError } from "@/lib/security/errors";
 import { recordAudit } from "@/modules/audit/service";
-import { getApprovedProfileSnapshot } from "@/modules/business-profile/service";
-import { createProvider } from "@/modules/lab/ai/factory";
-import { ProviderError, type AiProvider, type Usage } from "@/modules/lab/ai/types";
+import { getApprovedProfileSnapshot } from "@/modules/business-profile/service"; // readiness checks keep using it
+import type { AiProvider } from "@/modules/lab/ai/types";
 import { providerProblem, readLabConfig, type LabConfig } from "@/modules/lab/config";
-import { buildPrompt, type HistoryTurn } from "@/modules/lab/prompt";
-import { finalizeAiResult, parseProviderOutput } from "@/modules/lab/result";
-import { retrieve, hasRelevantFacts } from "@/modules/lab/retrieval";
-import {
-  conflictResult, detectTrigger, greetingResult, invalidOutputResult, isGreeting, noRelevantInfoResult,
-  permissionsBlockedResult, PRICE_OR_STOCK, profileUnavailableResult, triggerResult,
-} from "@/modules/lab/rules";
-import { MAX_CUSTOMER_CHARS, MAX_REPLY_CHARS, type DraftResult, type DraftStatus, type EvidenceItem } from "@/modules/lab/types";
+import { asEvidence, asStrings, computeDraft, evidenceJson, type DraftErrorKind } from "@/modules/lab/pipeline";
+import type { HistoryTurn } from "@/modules/lab/prompt";
+import { MAX_CUSTOMER_CHARS, MAX_REPLY_CHARS, type DraftStatus } from "@/modules/lab/types";
 import { requireMembership } from "@/modules/permissions/access";
 import { can } from "@/modules/permissions/roles";
 
@@ -24,10 +18,9 @@ export type LabDeps = { provider?: AiProvider; config?: LabConfig; now?: () => D
 export const MAX_CONVERSATIONS_PER_BUSINESS = 100;
 export const MAX_CUSTOMER_MESSAGES_PER_CONVERSATION = 50;
 const STALE_RUNNING_MS = 120_000;
-const MAX_OUTPUT_TOKENS = 1024;
 
 type Tx = Prisma.TransactionClient;
-type ErrorKind = "CONFIG" | "RATE_LIMIT" | "TIMEOUT" | "PROVIDER" | "INVALID_OUTPUT" | "INTERNAL";
+type ErrorKind = DraftErrorKind;
 
 export function failureMessage(kind: string | null): string {
   switch (kind) {
@@ -133,12 +126,6 @@ export async function listConversations(actorId: string, businessId: string) {
   const names = new Map(users.map((u) => [u.id, u.name]));
   return rows.map((r) => ({ ...r, messageCount: r._count.messages, createdByName: names.get(r.createdById) ?? "a former member" }));
 }
-
-const asEvidence = (json: unknown): EvidenceItem[] =>
-  Array.isArray(json)
-    ? json.filter((e): e is EvidenceItem => !!e && typeof e === "object" && ["ref", "kind", "sourceId", "label", "text"].every((k) => typeof (e as Record<string, unknown>)[k] === "string"))
-    : [];
-const asStrings = (json: unknown): string[] => (Array.isArray(json) ? json.filter((s): s is string => typeof s === "string") : []);
 
 export async function getConversation(actorId: string, businessId: string, conversationId: string) {
   await ctx(actorId, businessId, "lab:read");
@@ -291,85 +278,33 @@ export async function regenerateDraft(
 async function runGeneration(a: {
   actorId: string; businessId: string; conversationId: string; generationId: string; config: LabConfig; deps: LabDeps;
 }): Promise<GenerationOutcome> {
-  const { actorId, businessId, conversationId, generationId, config } = a;
-  const started = Date.now();
-  let usedAi = false;
-  let providerName: string | null = null;
-  let modelName: string | null = null;
-  let usage: Usage | null = null;
-  let errorKind: ErrorKind | null = null;
-  let result: DraftResult | null = null;
-  let profileRevision: number | null = null;
-  let latencyMs: number | null = null;
+  const { actorId, businessId, conversationId, generationId } = a;
 
-  try {
-    const [business, rows] = await Promise.all([
-      prisma.business.findUnique({ where: { id: businessId }, select: { name: true } }),
-      prisma.labMessage.findMany({
-        where: { conversationId }, orderBy: { seq: "asc" },
-        select: { role: true, content: true, draftState: true, approvedContent: true },
-      }),
-    ]);
-    // Context for the model = customer messages + APPROVED replies only. Unapproved drafts are never fed back.
-    const turns: HistoryTurn[] = rows.flatMap((r): HistoryTurn[] =>
-      r.role === "CUSTOMER" ? [{ from: "customer", text: r.content }]
-      : r.draftState === "APPROVED" && r.approvedContent ? [{ from: "assistant", text: r.approvedContent }] : []);
-    const current = turns.pop();
-    if (!current || current.from !== "customer") throw new ConflictError("There is no customer message to answer.");
-    const priorCustomer = turns.filter((t) => t.from === "customer").map((t) => t.text);
-    const customerTexts = [...priorCustomer, current.text];
+  const [business, rows] = await Promise.all([
+    prisma.business.findUnique({ where: { id: businessId }, select: { name: true } }),
+    prisma.labMessage.findMany({
+      where: { conversationId }, orderBy: { seq: "asc" },
+      select: { role: true, content: true, draftState: true, approvedContent: true },
+    }),
+  ]);
+  // Context for the model = customer messages + APPROVED replies only. Unapproved drafts are never fed back.
+  const turns: HistoryTurn[] = rows.flatMap((r): HistoryTurn[] =>
+    r.role === "CUSTOMER" ? [{ from: "customer", text: r.content }]
+    : r.draftState === "APPROVED" && r.approvedContent ? [{ from: "assistant", text: r.approvedContent }] : []);
+  const current = turns.pop();
+  if (!current || current.from !== "customer") throw new ConflictError("There is no customer message to answer.");
 
-    const snapshot = await getApprovedProfileSnapshot(businessId);
-    if (!snapshot) {
-      const profile = await prisma.businessProfile.findUnique({ where: { businessId }, select: { status: true } });
-      result = profileUnavailableResult(profile?.status ?? null);
-    } else if (!snapshot.capabilities.use_approved_knowledge || !snapshot.capabilities.prepare_suggested_response) {
-      const missing: string[] = [];
-      if (!snapshot.capabilities.use_approved_knowledge) missing.push("Use approved business knowledge");
-      if (!snapshot.capabilities.prepare_suggested_response) missing.push("Prepare suggested responses");
-      result = permissionsBlockedResult(missing);
-      profileRevision = snapshot.revision;
-    } else {
-      profileRevision = snapshot.revision;
-      const trigger = detectTrigger(current.text);
-      if (trigger) result = triggerResult(trigger);
-      else if (isGreeting(current.text)) result = greetingResult(retrieve(snapshot, "", []).preferences);
-      else {
-        const retrieval = retrieve(snapshot, current.text, priorCustomer);
-        if (retrieval.conflicts.length > 0) result = conflictResult(retrieval.conflicts);
-        else if (!hasRelevantFacts(retrieval) || (PRICE_OR_STOCK.test(current.text) && !retrieval.items.some((i) => i.relevance === "matched" && i.kind !== "offerings"))) {
-          // Prices and stock are not modelled in the profile: unless an approved FAQ/policy addresses it, do not ask the AI at all.
-          result = noRelevantInfoResult(PRICE_OR_STOCK.test(current.text));
-        }
-        else {
-          const prompt = buildPrompt({ businessName: business?.name ?? "this business", retrieval, history: turns, customerMessage: current.text });
-          const provider = a.deps.provider ?? createProvider(config); // throws ProviderError CONFIG when unusable
-          providerName = provider.name;
-          modelName = provider.model;
-          usedAi = true;
-          const res = await provider.generate({ system: prompt.system, user: prompt.user, maxOutputTokens: MAX_OUTPUT_TOKENS, timeoutMs: config.timeoutMs });
-          usage = res.usage;
-          latencyMs = res.latencyMs;
-          const parsed = parseProviderOutput(res.text);
-          if (!parsed.ok) {
-            errorKind = "INVALID_OUTPUT";
-            result = invalidOutputResult();
-          } else {
-            result = finalizeAiResult(parsed.value, retrieval, customerTexts);
-          }
-        }
-      }
-    }
-  } catch (err) {
-    if (err instanceof ProviderError) errorKind = err.kind;
-    else {
-      console.error("[lab] unexpected error", err instanceof Error ? err.name : typeof err);
-      errorKind = "INTERNAL";
-    }
-    result = null;
-  }
+  // The whole M3 generation + M4 pre-check + M5 grounding pipeline lives in one shared module,
+  // so this lab path and the M6c live WhatsApp assist behave identically by construction.
+  const { result, errorKind, usedAi, providerName, modelName, usage, latencyMs, profileRevision } = await computeDraft({
+    businessId,
+    businessName: business?.name ?? "this business",
+    customerText: current.text,
+    priorTurns: turns,
+    config: a.config,
+    provider: a.deps.provider,
+  });
 
-  latencyMs ??= usedAi ? Date.now() - started : null;
   const now = (a.deps.now ?? (() => new Date()))();
   try {
     await prisma.$transaction(async (tx) => {
@@ -392,7 +327,7 @@ async function runGeneration(a: {
             conversationId, seq: (last?.seq ?? 0) + 1, role: "ASSISTANT", content: result.replyDraft,
             draftState: "DRAFT", source: result.source, resultStatus: toDbStatus(result.status), reason: result.reason,
             missingInformation: result.missingInformation, escalationReason: result.escalationReason,
-            evidence: result.evidence as unknown as Prisma.InputJsonValue, profileRevision, generationId,
+            evidence: evidenceJson(result), profileRevision, generationId,
           },
         });
         const escalate = result.status !== "answerable" && conv.status === "ACTIVE";

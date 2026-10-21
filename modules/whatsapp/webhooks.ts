@@ -3,7 +3,7 @@
  * (spec §3.4). Pure functions only — the route handler stays a thin shell; unit tests cover
  * these with no network and no database.
  */
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 export type InboundMessage = {
   phoneNumberId: string;
@@ -60,11 +60,19 @@ export function parseInboundPayload(value: unknown): ParsedInbound {
  * Meta signs every webhook POST with HMAC-SHA256 over the RAW body:
  * `X-Hub-Signature-256: sha256=<hex>`. Fails closed on anything unexpected.
  */
-export function verifyWebhookSignature(appSecret: string, rawBody: string, header: string | null): boolean {
+export function verifyWebhookSignature(appSecret: string, rawBody: string | Uint8Array, header: string | null): boolean {
   if (!appSecret || !header) return false;
   const match = /^sha256=([0-9a-f]{64})$/i.exec(header);
   if (!match) return false;
-  const expected = createHmac("sha256", appSecret).update(rawBody, "utf8").digest();
+  const expected = createHmac("sha256", appSecret).update(rawBody).digest();
   const received = Buffer.from(match[1], "hex");
   return received.length === expected.length && timingSafeEqual(received, expected);
+}
+
+/** Compare handshake tokens without content-dependent early exits (including length). */
+export function verifyWebhookToken(expectedToken: string, suppliedToken: string | null): boolean {
+  if (!expectedToken || suppliedToken === null) return false;
+  const expectedDigest = createHash("sha256").update(expectedToken, "utf8").digest();
+  const suppliedDigest = createHash("sha256").update(suppliedToken, "utf8").digest();
+  return timingSafeEqual(expectedDigest, suppliedDigest);
 }

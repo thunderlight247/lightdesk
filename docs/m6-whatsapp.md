@@ -277,6 +277,26 @@ Two flows, one page (`/businesses/[businessId]/whatsapp`):
 | **M6c** | AI_ASSIST + takeover state machine, reusing the M3 generation + M4 pre-check + meters | integration tests incl. escalation never auto-sends |
 | **M6d** | Outbound send gate (24h window, metering, status callbacks) + Embedded Signup UI + onboarding docs | full `npm run check` + live smoke script with runner-provided credentials |
 
+Implementation status (2026-10-21): **M6a, M6b, M6d's send gate, and M6c are implemented.**
+M6c implementation notes, as built:
+
+- The M3 generation + M4 pre-check + M5 pipeline was extracted from the lab service into the
+  shared module `modules/lab/pipeline.ts` (`computeDraft`), so a live draft and a simulated lab
+  draft are produced by the same code path by construction. Lab behaviour is unchanged.
+- Draft storage lives on `WhatsAppMessage` (additive migration `20261021002937_m6c_whatsapp_drafts`):
+  status `DRAFT` + a `draftState` (DRAFT/SUPERSEDED) lifecycle plus the lab-mirroring review
+  columns (source, resultStatus, reason, missingInformation, evidence, profileRevision,
+  approvedContent/id/at). `wamid` is nullable: drafts have no wamid until a person sends one.
+  A `WhatsAppGeneration` table mirrors `LabGeneration` for live usage accounting and
+  per-(conversation, wamid) idempotency.
+- Takeover is the AI_ASSIST → OWNER_ONLY mode transition (`setConversationMode`, owner/admin
+  only, audited); the pending draft is marked SUPERSEDED, never deleted. "Hand back to AI"
+  immediately drafts the still-unanswered inbound through the same assist path.
+- The §6 open-question defaults were kept: in-app-only notifications (drafts surface in the
+  inbox + conversation console; no email yet), OWNER/ADMIN may send and control mode,
+  off-window sending stays blocked (template sending untouched), and images are still stored
+  by reference without AI drafting (assist ignores non-text messages).
+
 ---
 
 ## 5. Runner prerequisites (before M6b/M6d can be truly live)
@@ -287,7 +307,10 @@ LightDesk's operator (the project owner) must, outside the codebase:
   Provider / Solution Partner** status in a **verified Business Portfolio** (required for
   Embedded Signup to show to end businesses).
 - Configure a webhook URL + verify token on the required Cloud API topics after the
-  endpoint goes live; set the required env values (`WHATSAPP_APP_ID`, `WHATSAPP_APP_SECRET`,
+  endpoint goes live. `WHATSAPP_APP_SECRET` is the Meta app secret used to verify
+  `x-hub-signature-256` HMAC-SHA256 on each POST; it is not the GET verification token.
+  Keep it server-side only and set it in the deployment environment. Missing secret fails
+  closed (POST returns 403). Set the remaining env values (`WHATSAPP_APP_ID`,
   `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_WEBHOOK_SECRET`, `WHATSAPP_TOKEN_ENCRYPTION_KEY`,
   and the two `CRYPTO` secret envs needed by the decryption helpers).
 - Decide the **pilot phone number strategy** with the pilot business: their existing

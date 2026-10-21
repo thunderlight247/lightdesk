@@ -1,4 +1,7 @@
 export type DraftStatus = "answerable" | "needs_information" | "conflict_detected" | "escalation_required";
+
+/** Failure kinds for a drafting attempt. Shared by the lab and the live WhatsApp assist (M6c). */
+export type DraftErrorKind = "CONFIG" | "RATE_LIMIT" | "TIMEOUT" | "PROVIDER" | "INVALID_OUTPUT" | "INTERNAL";
 export const DRAFT_STATUSES: readonly DraftStatus[] = ["answerable", "needs_information", "conflict_detected", "escalation_required"];
 
 export type EvidenceKind = "faq" | "policy" | "identity" | "offerings" | "catalogue";

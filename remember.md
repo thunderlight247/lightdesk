@@ -810,6 +810,39 @@ continue only with the next explicitly requested task.
 
 ## 15. Change log
 
+-   **2026-10-21 (M6c: AI_ASSIST drafts + takeover state machine):** Implemented the last core
+    M6 phase: per-conversation AI assistance, always with a human send gate. Additive migration
+    `20261021002937_m6c_whatsapp_drafts`: `WhatsAppMessageStatus` gains `DRAFT`; new
+    `WhatsAppMessageDraftState` enum (DRAFT/SUPERSEDED); `WhatsAppMessage` gains the lab-mirroring
+    review columns (draftState, source, resultStatus, reason, missingInformation, evidence,
+    profileRevision, generationId, approvedContent/id/by/at) and `wamid` is now nullable (drafts
+    have no wamid until a person sends); new `WhatsAppGeneration` table mirrors `LabGeneration`
+    (usage accounting, per-(conversation, wamid) idempotency, requestedById null = system).
+    Architectural change: the M3 generation + M4 pre-check + M5 pipeline was extracted from
+    `modules/lab/service.ts` into shared `modules/lab/pipeline.ts` (`computeDraft`), so lab and
+    live drafts behave identically by construction; lab behavior/tests unchanged.
+    `modules/whatsapp/assist.ts`: `runInboundAssist` drafts ONLY for AI_ASSIST conversations,
+    stores status DRAFT/draftState DRAFT (never anything sent), rides the SAME per-business
+    hourly cap as the lab (config.rateBusinessPerHour, skip + audit when reached), escalates
+    non-answerable results on the conversation (inbox-visible), and never imports the Graph
+    client — it physically cannot send. Webhook route triggers assist after storing a signed
+    inbound (failures never break the 200 to Meta). `sendOwnerReply` now supersedes drafts on
+    send and records `approvedContent` (the text actually sent); the send meter counts only
+    SENT-like statuses (drafts never count toward the 1,000/month tier). New
+    `setConversationMode` (owner/admin only per the §6 defaults, race-guarded, audited
+    `whatsapp.conversation.mode_changed`): takeover marks pending drafts SUPERSEDED (kept, not
+    deleted, per §3.3); "hand back to AI" immediately drafts the still-unanswered inbound.
+    Console UI: conversation page gains AI draft rendering with status/reason/missing-info,
+    control panel (enable AI / take over), and a draft-prefilled review-and-send form
+    (`components/whatsapp/mode-controls.tsx`, draft-aware reply form). Tests: new
+    `tests/integration/whatsapp-assist.test.ts` (10 tests: OWNER_ONLY default no-draft, webhook
+    RULES draft, grounded AI draft with usage + no stale-draft feedback, escalation never
+    AI-calls never auto-sends, wamid idempotency incl. webhook retry, hourly cap skip + audit,
+    takeover stops drafting and marks drafts stale, hand-back drafts pending inbound,
+    OWNER/ADMIN/member permission matrix, invalid-mode rejection, send supersedes + approved
+    content + meter). Affected suites green: lab-service (45), whatsapp-webhook (10),
+    whatsapp-send (9), whatsapp-assist (10). Full `npm run check` pending at the time of this
+    entry — see the M6c report for the final gate result.
 -   **2026-10-20 (Owner console UI; WhatsApp remains customer interface):** Owner confirmed that
     customers use only standard WhatsApp mobile/Desktop; LightDesk is backend orchestration; the
     business operator reviews in a private LightDesk console; human approval remains required.

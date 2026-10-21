@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Alert, Field, Textarea } from "@/components/ui/field";
 import type { ActionState } from "@/lib/validation/action-state";
 
-export function WhatsAppReplyForm({ businessId, conversationId, enabled }: {
+export function WhatsAppReplyForm({ businessId, conversationId, enabled, draft }: {
   businessId: string;
   conversationId: string;
   enabled: boolean;
+  /** M6c: when reviewing an AI draft, pre-fill the text; the owner can edit before sending. */
+  draft?: { text: string; source: string | null; reason: string | null; evidenceCount: number } | null;
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(sendWhatsAppReplyAction, {});
   const ref = useRef<HTMLFormElement>(null);
@@ -24,9 +26,12 @@ export function WhatsAppReplyForm({ businessId, conversationId, enabled }: {
       <input type="hidden" name="conversationId" value={conversationId} />
       {state.error && <Alert>{state.error}</Alert>}
       {state.ok && state.message && <Alert tone="success">{state.message}</Alert>}
-      <Field label="Reply to customer" hint="Only send information you have verified. Replies are plain text and limited to 4,000 characters.">
-        <Textarea name="text" rows={4} required maxLength={4000} disabled={!enabled || pending}
-          placeholder={enabled ? "Write a reply…" : "The 24-hour reply window is closed."} />
+      <Field label={draft ? "Review the AI draft, edit if needed, then send" : "Reply to customer"}
+        hint={draft
+          ? `${draft.source === "AI" ? "AI draft grounded in approved information" : "Rules-based draft"}${draft.evidenceCount > 0 ? ` · ${draft.evidenceCount} approved source${draft.evidenceCount === 1 ? "" : "s"}` : ""}. Plain text, max 4,000 characters.`
+          : "Only send information you have verified. Replies are plain text and limited to 4,000 characters."}>
+        <Textarea name="text" rows={4} required maxLength={4000} disabled={!enabled || pending} defaultValue={draft?.text ?? ""}
+          placeholder={enabled ? (draft ? draft.text : "Write a reply…") : "The 24-hour reply window is closed."} />
       </Field>
       <Button type="submit" disabled={!enabled || pending}>
         {pending ? "Sending…" : "Send reply"}

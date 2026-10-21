@@ -6,10 +6,13 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/client";
 import { recordAudit } from "@/modules/audit/service";
-import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/security/errors";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/lib/security/errors";
 import { readSecretBoxKey, decryptSecret } from "@/lib/security/secret-box";
+import type { AiProvider } from "@/modules/lab/ai/types";
 import { sendWhatsAppText } from "@/modules/whatsapp/graph";
 import { readWhatsappConfig } from "@/modules/whatsapp/config";
+import { pendingInboundForAssist, runInboundAssist } from "@/modules/whatsapp/assist";
+import { SENT_LIKE_STATUSES } from "@/modules/whatsapp/statuses";
 import { requireMembership, requirePermission } from "@/modules/permissions/access";
 import { can } from "@/modules/permissions/roles";
 import type { InboundMessage } from "@/modules/whatsapp/webhooks";
@@ -127,8 +130,9 @@ export async function getSendReadiness(actorId: string, businessId: string, conv
     select: { timestampSent: true, createdAt: true },
   });
   const windowOpen = lastInbound !== null && now.getTime() - windowOpensFrom(lastInbound).getTime() <= SERVICE_WINDOW_MS;
+  // DRAFT rows are not sends: the monthly free-tier meter counts sent traffic only.
   const meterUsed = await prisma.whatsAppMessage.count({
-    where: { connectionId: conv.connectionId, direction: "OUTBOUND", createdAt: { gte: firstOfMonth(now) } },
+    where: { connectionId: conv.connectionId, direction: "OUTBOUND", status: { in: SENT_LIKE_STATUSES }, createdAt: { gte: firstOfMonth(now) } },
   });
   return {
     mode: conv.mode as string,
@@ -179,12 +183,21 @@ export async function getWhatsAppConversation(actorId: string, businessId: strin
     select: {
       id: true, connectionId: true, customerPhone: true, customerName: true, mode: true,
       status: true, escalationReason: true, lastMessageAt: true, createdAt: true,
-      messages: { orderBy: { createdAt: "asc" }, select: { id: true, direction: true, text: true, type: true, status: true, timestampSent: true, createdAt: true, fromOwnerApp: true } },
+      messages: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true, direction: true, text: true, type: true, status: true, timestampSent: true, createdAt: true, fromOwnerApp: true,
+          // M6c review-surface fields:
+          draftState: true, source: true, resultStatus: true, reason: true, missingInformation: true,
+          escalationReason: true, evidence: true, profileRevision: true, approvedContent: true,
+        },
+      },
     },
   });
   if (!conversation) throw new NotFoundError("Conversation not found");
   const readiness = await getSendReadiness(actorId, businessId, conversationId);
-  return { conversation, readiness };
+  const latestDraft = [...conversation.messages].reverse().find((m) => m.draftState === "DRAFT") ?? null;
+  return { conversation, readiness, latestDraft };
 }
 
 /**
@@ -211,7 +224,7 @@ export async function sendOwnerReply(
   }
 
   const meterUsed0 = await prisma.whatsAppMessage.count({
-    where: { connectionId: conv.connectionId, direction: "OUTBOUND", createdAt: { gte: firstOfMonth(now) } },
+    where: { connectionId: conv.connectionId, direction: "OUTBOUND", status: { in: SENT_LIKE_STATUSES }, createdAt: { gte: firstOfMonth(now) } },
   });
   const meterFree = Math.max(FREE_SERVICE_MESSAGES_PER_MONTH - meterUsed0, 0);
 
@@ -272,11 +285,90 @@ export async function sendOwnerReply(
     }
   }
   await prisma.whatsAppConversation.update({ where: { id: conv.id }, data: { lastMessageAt: now } });
+
+  // M6c review surface: the draft the owner reviewed is now used — the original draft text is
+  // never edited; the text actually sent is recorded on it (edited flag), and every older
+  // draft becomes SUPERSEDED (kept, not deleted — same rule as the lab).
+  const latestDraft = await prisma.whatsAppMessage.findFirst({
+    where: { conversationId: conv.id, draftState: "DRAFT" },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  if (latestDraft) {
+    await prisma.whatsAppMessage.updateMany({ where: { conversationId: conv.id, draftState: "DRAFT" }, data: { draftState: "SUPERSEDED" } });
+    await prisma.whatsAppMessage.update({
+      where: { id: latestDraft.id },
+      data: { approvedContent: text, approvedById: actorId, approvedAt: now },
+    });
+  }
+
   const meterUsed = meterUsed0 + (recordedDuplicate ? 0 : 1);
   await recordAudit(prisma, {
     action: "whatsapp.message.sent", actorUserId: actorId, businessId,
     targetType: "WhatsAppConversation", targetId: conversationId,
-    metadata: { meterUsed, meterFree: Math.max(FREE_SERVICE_MESSAGES_PER_MONTH - meterUsed, 0) },
+    metadata: {
+      meterUsed, meterFree: Math.max(FREE_SERVICE_MESSAGES_PER_MONTH - meterUsed, 0),
+      ...(latestDraft ? { fromDraftId: latestDraft.id } : {}),
+    },
   });
   return { sent: true, wamid: result.wamid, meterUsed, meterFree: Math.max(FREE_SERVICE_MESSAGES_PER_MONTH - meterUsed, 0) };
+}
+
+// ---- M6c: human control model (spec §3.3) -----------------------------------------------------------------
+// The AI never controls the mode, only the owner/admin do, and every transition is audited.
+// Takeover is switching AI_ASSIST -> OWNER_ONLY: the pending draft is marked SUPERSEDED (kept,
+// not deleted) and the very next inbound message drafting stops. "Hand back to AI" is the
+// symmetric OWNER_ONLY -> AI_ASSIST switch; the still-unanswered inbound immediately gets a
+// draft through the same live assist path the webhook uses.
+
+export type ModeChange = { mode: "OWNER_ONLY" | "AI_ASSIST"; changed: boolean; draft?: { produced: boolean; reason?: string } };
+
+export async function setConversationMode(
+  actorId: string, businessId: string, conversationId: string,
+  input: { mode: unknown }, deps: { provider?: AiProvider; now?: () => Date } = {},
+): Promise<ModeChange> {
+  const membership = await requireMembership(actorId, businessId);
+  if (!can(membership.role, "whatsapp:send")) throw new ForbiddenError();
+  if (typeof input.mode !== "string" || (input.mode !== "OWNER_ONLY" && input.mode !== "AI_ASSIST")) {
+    throw new ValidationError("Invalid mode");
+  }
+  const mode = input.mode;
+
+  const conv = await prisma.whatsAppConversation.findFirst({ where: { id: conversationId, businessId } });
+  if (!conv) throw new NotFoundError("Conversation not found");
+  if (conv.status === "RESOLVED") throw new ConflictError("This conversation is resolved.");
+  if (conv.mode === mode) return { mode, changed: false };
+
+  return prisma.$transaction(async (tx) => {
+    // Race-guard the transition: only change a row still in the expected mode.
+    const { count } = await tx.whatsAppConversation.updateMany({
+      where: { id: conv.id, mode: conv.mode },
+      data: { mode },
+    });
+    if (count !== 1) throw new ConflictError("The conversation control mode was changed by someone else. Reload and try again.");
+
+    if (mode === "OWNER_ONLY") {
+      // Takeover: pending drafts are clearly marked stale, not deleted.
+      await tx.whatsAppMessage.updateMany({ where: { conversationId: conv.id, draftState: "DRAFT" }, data: { draftState: "SUPERSEDED" } });
+    }
+    await recordAudit(tx, {
+      action: "whatsapp.conversation.mode_changed", actorUserId: actorId, businessId,
+      targetType: "WhatsAppConversation", targetId: conv.id,
+      metadata: { from: conv.mode as string, to: mode, takeover: mode === "OWNER_ONLY" && conv.mode === "AI_ASSIST" },
+    });
+    return { mode, changed: true } as ModeChange;
+  }).then(async (change) => {
+    if (mode === "AI_ASSIST") {
+      // Draft the still-unanswered inbound message (if any) through the same assisted path.
+      const pending = await pendingInboundForAssist(conversationId);
+      if (pending) {
+        const outcome = await runInboundAssist(
+          { businessId, conversationId, wamid: pending.wamid, text: pending.text },
+          { provider: deps.provider, now: deps.now },
+        );
+        return { ...change, draft: { produced: outcome.produced, reason: outcome.produced ? undefined : outcome.reason } };
+      }
+    }
+    return change;
+  });
 }

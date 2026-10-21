@@ -3,7 +3,7 @@ import { createHmac } from "node:crypto";
 import { decryptSecret, encryptSecret, readSecretBoxKey } from "@/lib/security/secret-box";
 import { readWhatsappConfig, whatsappConnectionProblem } from "@/modules/whatsapp/config";
 import { checkWabaOwnsPhoneNumber, fetchPhoneNumberInfo, sendWhatsAppText } from "@/modules/whatsapp/graph";
-import { parseInboundPayload, verifyWebhookSignature } from "@/modules/whatsapp/webhooks";
+import { parseInboundPayload, verifyWebhookSignature, verifyWebhookToken } from "@/modules/whatsapp/webhooks";
 
 describe("readWhatsappConfig", () => {
   it("reports all-missing config with no crash and no secret values", () => {
@@ -151,6 +151,24 @@ describe("verifyWebhookSignature", () => {
     expect(verifyWebhookSignature(appSecret, body, null)).toBe(false);
     expect(verifyWebhookSignature(appSecret, body, "sha1=deadbeef")).toBe(false);
     expect(verifyWebhookSignature(appSecret, body, "sha256=not-a-hex-hash")).toBe(false);
+    expect(verifyWebhookSignature("", body, sign(body, appSecret))).toBe(false);
+  });
+
+  it("signs exact raw bytes: whitespace/formatting changes invalidate the old signature", () => {
+    const compact = Buffer.from('{"a":1,"b":2}', "utf8");
+    const formatted = Buffer.from('{\n  "a": 1,\n  "b": 2\n}', "utf8");
+    const compactSignature = sign(compact.toString("utf8"), appSecret);
+    expect(verifyWebhookSignature(appSecret, compact, compactSignature)).toBe(true);
+    expect(verifyWebhookSignature(appSecret, formatted, compactSignature)).toBe(false);
+  });
+});
+
+describe("verifyWebhookToken", () => {
+  it("accepts only the configured handshake token and fails closed for missing values", () => {
+    expect(verifyWebhookToken("configured-token", "configured-token")).toBe(true);
+    expect(verifyWebhookToken("configured-token", "wrong-token")).toBe(false);
+    expect(verifyWebhookToken("configured-token", null)).toBe(false);
+    expect(verifyWebhookToken("", "configured-token")).toBe(false);
   });
 });
 

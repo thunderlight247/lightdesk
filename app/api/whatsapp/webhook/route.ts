@@ -8,8 +8,9 @@
  *        default — nothing is ever sent in this phase) and always answers Meta quickly.
  */
 import { readWhatsappConfig } from "@/modules/whatsapp/config";
+import { runInboundAssist } from "@/modules/whatsapp/assist";
 import { recordInboundMessage } from "@/modules/whatsapp/service";
-import { parseInboundPayload, verifyWebhookSignature } from "@/modules/whatsapp/webhooks";
+import { parseInboundPayload, verifyWebhookSignature, verifyWebhookToken } from "@/modules/whatsapp/webhooks";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +19,11 @@ const noStore = { "Cache-Control": "no-store" } as const;
 /** Middleware guard for POST: reads the raw body ONCE (Request bodies are single-use),
  *  verifies it against WHATSAPP_APP_SECRET via x-hub-signature-256 before anything else
  *  happens, and either returns a rejection Response or the verified raw body. */
-async function verifyWebhookGuard(req: Request): Promise<{ ok: true; body: string } | { ok: false; response: Response }> {
+async function verifyWebhookGuard(req: Request): Promise<{ ok: true; body: Uint8Array } | { ok: false; response: Response }> {
   const config = readWhatsappConfig();
+  // Fail closed in every environment; missing configuration must never disable authenticity checks.
   if (!config.appSecret) return { ok: false, response: new Response("forbidden", { status: 403, headers: noStore }) };
-  const body = await req.text();
+  const body = new Uint8Array(await req.arrayBuffer());
   if (!verifyWebhookSignature(config.appSecret, body, req.headers.get("x-hub-signature-256"))) {
     return { ok: false, response: new Response("forbidden", { status: 403, headers: noStore }) };
   }
@@ -36,7 +38,7 @@ export async function GET(req: Request) {
     url.searchParams.get("hub.mode") === "subscribe" &&
     !!config.webhookVerifyToken &&
     !!challenge &&
-    url.searchParams.get("hub.verify_token") === config.webhookVerifyToken
+    verifyWebhookToken(config.webhookVerifyToken, url.searchParams.get("hub.verify_token"))
   ) {
     return new Response(challenge, { headers: { ...noStore, "content-type": "text/plain" } });
   }
@@ -48,7 +50,7 @@ export async function POST(req: Request) {
   if (!guarded.ok) return guarded.response;
   let payload: unknown;
   try {
-    payload = JSON.parse(guarded.body);
+    payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(guarded.body));
   } catch {
     return new Response("bad request", { status: 400, headers: noStore });
   }
@@ -59,6 +61,21 @@ export async function POST(req: Request) {
     const recorded = await recordInboundMessage(msg);
     if (recorded) {
       if (!recorded.duplicate) stored += 1;
+      // M6c: AI_ASSIST conversations get a DRAFT through the shared lab pipeline. Never in
+      // OWNER_ONLY mode, never anything but a draft, and a failure here must never break the
+      // webhook response Meta expects (the attempt is audited inside runInboundAssist).
+      if (!recorded.duplicate && msg.text !== null) {
+        try {
+          await runInboundAssist({
+            businessId: recorded.connection.businessId,
+            conversationId: recorded.conversationId,
+            wamid: msg.wamid,
+            text: msg.text,
+          });
+        } catch (err) {
+          console.error("[whatsapp-webhook] assist failure", err instanceof Error ? err.name : typeof err);
+        }
+      }
     } else {
       unknown += 1;
     }
