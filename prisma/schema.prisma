@@ -93,6 +93,7 @@ model User {
   invitationsSent     Invitation[]         @relation("InvitationInviter")
   invitationsAccepted Invitation[]         @relation("InvitationAcceptor")
   auditEvents         AuditEvent[]
+  pilotFeedback       PilotFeedback[]
 }
 
 model Session {
@@ -109,8 +110,8 @@ model Session {
 }
 
 model Business {
-  id        String         @id @default(cuid())
-  name      String
+  id          String         @id @default(cuid())
+  name        String
   slug        String         @unique
   description String? // M1: optional, <=500 chars (CHECK)
   location    String? // M1: optional free text, <=120 chars (CHECK)
@@ -118,13 +119,17 @@ model Business {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
-  memberships BusinessMembership[]
-  invitations Invitation[]
-  auditEvents AuditEvent[]
-  profile     BusinessProfile?
-  labConversations LabConversation[]
-  whatsappConnections WhatsAppConnection[]
+  memberships           BusinessMembership[]
+  invitations           Invitation[]
+  auditEvents           AuditEvent[]
+  profile               BusinessProfile?
+  labConversations      LabConversation[]
+  whatsappConnections   WhatsAppConnection[]
   whatsappConversations WhatsAppConversation[]
+  // M7 Controlled Pilot: enrollment/consent, hard usage caps and owner feedback.
+  pilotEnrollment       PilotEnrollment?
+  usageCaps             UsageCaps?
+  pilotFeedback         PilotFeedback[]
 }
 
 model BusinessMembership {
@@ -199,9 +204,9 @@ model BusinessProfile {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  entries  ProfileEntry[]
-  faqs     FaqEntry[]
+  business       Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  entries        ProfileEntry[]
+  faqs           FaqEntry[]
   catalogueItems CatalogueItem[]
 }
 
@@ -255,18 +260,18 @@ model FaqEntry {
 
 // ---- M5: Structured Product Catalogue & Data Hardening ---------------------------------
 model CatalogueItem {
-  id                  String      @id @default(cuid())
-  profileId           String
-  name                String
-  description         String?
-  category            String?
-  priceGhs            Decimal     @db.Decimal(10, 2)
-  currency            String      @default("GHS")
-  inStock             Boolean     @default(true)
-  variants            String?
-  sku                 String?
-  normalizedName      String
-  
+  id             String  @id @default(cuid())
+  profileId      String
+  name           String
+  description    String?
+  category       String?
+  priceGhs       Decimal @db.Decimal(10, 2)
+  currency       String  @default("GHS")
+  inStock        Boolean @default(true)
+  variants       String?
+  sku            String?
+  normalizedName String
+
   // Review & governance (mirrors M2 ProfileEntry/FaqEntry)
   state               ReviewState @default(DRAFT)
   approvedName        String?
@@ -277,13 +282,13 @@ model CatalogueItem {
   approvedVariants    String?
   approvedSku         String?
   revision            Int         @default(1)
-  
-  createdById         String
-  updatedById         String
-  approvedById        String?
-  approvedAt          DateTime?
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
+
+  createdById  String
+  updatedById  String
+  approvedById String?
+  approvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   profile BusinessProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
@@ -453,10 +458,10 @@ model WhatsAppConversation {
   createdAt        DateTime                   @default(now())
   updatedAt        DateTime                   @updatedAt
 
-  connection   WhatsAppConnection   @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  business     Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  messages     WhatsAppMessage[]
-  generations  WhatsAppGeneration[]
+  connection  WhatsAppConnection   @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  business    Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  messages    WhatsAppMessage[]
+  generations WhatsAppGeneration[]
 
   @@unique([connectionId, customerPhone])
   @@index([businessId, lastMessageAt])
@@ -467,19 +472,19 @@ model WhatsAppConversation {
 // unique at Meta (unique index = idempotent dedupe of webhook retries); it is null for M6c
 // draft rows, which have no wamid until a person sends them and Graph returns one.
 model WhatsAppMessage {
-  id            String                   @id @default(cuid())
+  id             String                   @id @default(cuid())
   conversationId String
-  connectionId  String
-  direction     WhatsAppMessageDirection
-  wamid         String?                  @unique
-  text          String?
-  type          String                   @default("text")
-  status        WhatsAppMessageStatus
+  connectionId   String
+  direction      WhatsAppMessageDirection
+  wamid          String?                  @unique
+  text           String?
+  type           String                   @default("text")
+  status         WhatsAppMessageStatus
   // Coexistence echo: the owner answered from their own WhatsApp Business app, not via LightDesk.
-  fromOwnerApp  Boolean                  @default(false)
-  errorInfo     Json?
-  timestampSent DateTime?
-  createdAt     DateTime                 @default(now())
+  fromOwnerApp   Boolean                  @default(false)
+  errorInfo      Json?
+  timestampSent  DateTime?
+  createdAt      DateTime                 @default(now())
 
   // ---- M6c: AI-assist draft review surface (mirrors the M3 lab fields; the values mean the same) ----
   draftState         WhatsAppMessageDraftState?
@@ -511,6 +516,61 @@ model WhatsAppMessage {
 // long-lived business token must WAIT on the server between the two UI steps (exchange →
 // number choice). It is stored AES-256-GCM encrypted (same secret box as connections),
 // never sent back to the browser, and is deleted once used or after a short TTL.
+// ---- M7: Controlled Pilot rules/controls ---------------------------------------------
+// A business enters the pilot ONLY by platform-admin enrollment. While status is not ACTIVE,
+// restricted capabilities (AI_ASSIST drafting, the owner send gate) are refused in server code.
+// Consent is the owner's explicit console action recording themselves, the time and the
+// accepted consent-text version; it is revocable at any time.
+enum PilotEnrollmentStatus {
+  PENDING_CONSENT
+  ACTIVE
+  PAUSED
+  EXITED
+}
+
+model PilotEnrollment {
+  id                 String                @id @default(cuid())
+  businessId         String                @unique
+  status             PilotEnrollmentStatus @default(PENDING_CONSENT)
+  consentTextVersion String                @default("v1") @db.VarChar(40)
+  consentById        String?
+  consentAt          DateTime?
+  pausedReason       String?               @db.VarChar(200)
+  note               String?               @db.VarChar(500)
+  createdById        String
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  business Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  feedback PilotFeedback[]
+}
+
+// Per-business hard usage limits, always <= the platform ceilings in modules/pilot.
+// Enforced in server code BEFORE any AI call or Graph request; every breach is audited.
+model UsageCaps {
+  businessId       String @id
+  aiCallsPerDay    Int
+  outboundPerMonth Int
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+// Owner-to-platform feedback captured during the pilot. Never fed back into the AI.
+model PilotFeedback {
+  id          String   @id @default(cuid())
+  businessId  String
+  category    String   @db.VarChar(30)
+  comment     String   @db.VarChar(1000)
+  createdById String
+  createdAt   DateTime @default(now())
+
+  business   Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  enrollment PilotEnrollment @relation(fields: [businessId], references: [businessId], onDelete: Cascade, map: "PilotFeedback_enrollment_fkey")
+  createdBy  User            @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([businessId, createdAt])
+}
+
 model WhatsAppPendingConnection {
   id              String   @id @default(cuid())
   businessId      String   @unique

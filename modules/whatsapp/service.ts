@@ -17,7 +17,7 @@ import { SENT_LIKE_STATUSES } from "@/modules/whatsapp/statuses";
 import { requireMembership, requirePermission } from "@/modules/permissions/access";
 import { can } from "@/modules/permissions/roles";
 import type { InboundMessage } from "@/modules/whatsapp/webhooks";
-
+import { assertPilotOutboundAllowed, requirePilotActive, checkUsageCaps } from "@/modules/pilot/service";
 export type ConnectionRecord = {
   id: string;
   businessId: string;
@@ -135,6 +135,9 @@ export async function getSendReadiness(actorId: string, businessId: string, conv
   const meterUsed = await prisma.whatsAppMessage.count({
     where: { connectionId: conv.connectionId, direction: "OUTBOUND", status: { in: SENT_LIKE_STATUSES }, createdAt: { gte: firstOfMonth(now) } },
   });
+  // M7: pilot caps and consent state ride along so every console shows the truth.
+  const caps = await checkUsageCaps(businessId, now);
+  const pilot = await requirePilotActive(businessId);
   return {
     mode: conv.mode as string,
     status: conv.status as string,
@@ -142,6 +145,8 @@ export async function getSendReadiness(actorId: string, businessId: string, conv
     windowClosesAt: lastInbound ? new Date(windowOpensFrom(lastInbound).getTime() + SERVICE_WINDOW_MS) : null,
     meterUsed,
     meterFree: Math.max(FREE_SERVICE_MESSAGES_PER_MONTH - meterUsed, 0),
+    pilotOk: pilot.ok,
+    pilotCapped: caps.outboundCap !== null && caps.outboundUsed >= caps.outboundCap,
   };
 }
 
@@ -230,6 +235,17 @@ export async function sendOwnerReply(
   });
   const meterFree = Math.max(FREE_SERVICE_MESSAGES_PER_MONTH - meterUsed0, 0);
 
+  // M7 pilot control layer: consent gate first (nothing restricted works without an active
+  // pilot), then the hard monthly outbound cap — BOTH before the token read and any Graph
+  // request, each with a distinct reason and its own audit record.
+  const pilotReasons = await assertPilotOutboundAllowed(businessId, now);
+  if (pilotReasons) {
+    await recordAudit(prisma, {
+      action: "pilot.send.blocked", actorUserId: actorId, businessId,
+      targetType: "WhatsAppConversation", targetId: conversationId, metadata: { reason: pilotReasons.join(" ") },
+    });
+    return { sent: false, reason: pilotReasons.join(" "), meterUsed: meterUsed0, meterFree };
+  }
   const lastInbound = await prisma.whatsAppMessage.findFirst({
     where: { conversationId, direction: "INBOUND" },
     orderBy: [{ timestampSent: "desc" }, { createdAt: "desc" }],
@@ -335,6 +351,13 @@ export async function setConversationMode(
     throw new ValidationError("Invalid mode");
   }
   const mode = input.mode;
+
+  // M7 pilot gate: an enrolled business that is not ACTIVE (consent missing, paused, exited)
+  // cannot switch a conversation to AI_ASSIST. Takeover (OWNER_ONLY) stays always allowed.
+  if (mode === "AI_ASSIST") {
+    const pilot = await requirePilotActive(businessId);
+    if (!pilot.ok) throw new ForbiddenError(pilot.reason);
+  }
 
   const conv = await prisma.whatsAppConversation.findFirst({ where: { id: conversationId, businessId } });
   if (!conv) throw new NotFoundError("Conversation not found");

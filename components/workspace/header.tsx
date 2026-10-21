@@ -20,12 +20,20 @@ export function Header({ user }: { user: SessionUser }) {
         </nav>
         <div className="flex flex-wrap items-center gap-3">
           {user.isPlatformAdmin && (
-            <Link
-              href="/admin/businesses/new"
-              className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-100"
-            >
-              Platform admin
-            </Link>
+            <>
+              <Link
+                href="/admin/pilot"
+                className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-100"
+              >
+                Pilot
+              </Link>
+              <Link
+                href="/admin/businesses/new"
+                className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-900 hover:bg-amber-100"
+              >
+                Platform admin
+              </Link>
+            </>
           )}
           <form action={logoutAction} className="flex items-center gap-3">
             <span className="hidden text-zinc-600 sm:inline">{user.name}</span>

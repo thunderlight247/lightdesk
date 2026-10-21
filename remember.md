@@ -810,6 +810,39 @@ continue only with the next explicitly requested task.
 
 ## 15. Change log
 
+- **2026-10-21 (M7 P0 pilot controls implemented; Cloudflare evaluation phase 1 done):** Implemented the M7
+  Controlled Pilot's code layer per the new spec `docs/m7-pilot.md` (owner decisions: ALL M7 gaps in code;
+  Cloudflare is the hosting path to evaluate now). Additive migrations `20261021110233_m7_pilot_controls` +
+  `20261021113044_m7_pilot_feedback_fk` add `PilotEnrollment` (PENDING_CONSENT/ACTIVE/PAUSED/EXITED, explicit
+  owner consent with term version + audit), `UsageCaps` (per-business hard caps, floor 0, platform ceilings
+  enforced in code: default 50 AI/day + 100 outbound/month, ceiling 200/800) and `PilotFeedback`
+  (owner-to-platform feedback, never fed to the AI). New `modules/pilot/service.ts`: platform-admin-only
+  enrollment lifecycle; OWNER-only consent/leave/caps (business may only narrow the ceiling); the
+  deterministic gate `requirePilotActive` (un-enrolled businesses keep stock M6 behavior); cap counting over
+  WhatsAppGeneration (UTC day) and SENT-like outbound (UTC month). Gates wired in server code BEFORE any AI
+  call or Graph request: `runInboundAssist` (consent+daily AI cap -> skip + audit `pilot.cap.blocked`),
+  `setConversationMode` (AI_ASSIST switch refused while not ACTIVE), `sendOwnerReply` (consent+monthly
+  outbound cap -> refuse + `pilot.send.blocked`), and `getSendReadiness` surfaces pilot state + caps.
+  Owner console: pilot panel on the WhatsApp settings page (consent terms, caps editor, leave button,
+  feedback form). Platform console: `/admin/pilot` (enrollment candidates, per-business counters — AI today,
+  outbound this month, open/escalated conversations, failed sends — and recent feedback; counters only, no
+  conversation content) + header link. Two early bugs were caught by tests and fixed at cause: the
+  duplicate-enrollment check ran after its upsert; an empty reasons-array was truthy (would have blocked
+  everything) — both now return/branch correctly. Tests: 12 integration (`tests/integration/pilot-controls.test.ts`:
+  admin-only enrollment, consent gate blocking mode switch + send, cross-tenant NOT_FOUND, owner leave,
+  admin pause/resume, daily AI cap and monthly outbound cap with zero-Graph/call assertions, cap validation,
+  feedback scoping/validation, admin overview with no-content-typing) + 8 unit (cap validation, categories).
+  Full gate: lint 0 errors (1 pre-existing warning; `.open-next/**`/`.wrangler/**` added to eslint ignores
+  because the Cloudflare build artifacts were blowing up lint memory), typecheck, 98 unit + 210 integration
+  tests, production build — all green (staged under NODE_OPTIONS=1024MB after one OOM kill on the small runner).
+  Cloudflare evaluation phase 1: `npx vinext check` reports this repo 100% compatible, but vinext 1.3.0 needs
+  Vite 8 while Vitest 3.2.7 caps Vite ^7 — blocked pending upstream; the OpenNext adapter build SUCCEEDED on
+  the real repo (`--dangerouslyUseUnsupportedNextVersion` only because Next 15.5 is past its own 2-year
+  support window — upgrade to Next 16 is now an M8 item), and under `wrangler` (workerd) the app served
+  /login + /api/health and executed a real Prisma token lookup through nodejs_compat. Deploy phase needs
+  Cloudflare account access + a hosted PostgreSQL (runner inputs). Honest P1 boundary: no deploy has run yet,
+  scrypt-under-workerd and the live webhook path are verification items for the deployed step.
+
 -   **2026-10-21 (M6 LIVE end-to-end run + status callbacks):** The full M6 loop ran LIVE:
     Meta's webhook verified against a fresh tunnel, real customer messages from the owner's
     phone (Light, 2335942… ) processed through AI_ASSIST, and the owner send gate SUCCEEDED

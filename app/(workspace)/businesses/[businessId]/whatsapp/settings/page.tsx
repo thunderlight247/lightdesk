@@ -3,9 +3,11 @@ import { notFound } from "next/navigation";
 import { Alert, Chip } from "@/components/ui/field";
 import { PageHeading } from "@/components/ui/card";
 import { WhatsAppConnectionSettings } from "@/components/whatsapp/connection-settings";
+import { PilotPanel } from "@/components/whatsapp/pilot-panel";
 import { orNotFound, requireUserForPage } from "@/lib/auth/guards";
 import { businessIdSchema } from "@/lib/validation/schemas";
 import { getSignupState } from "@/modules/whatsapp/onboarding";
+import { getPilotStatus, type PilotStatusView } from "@/modules/pilot/service";
 
 /**
  * M6d onboarding UX (spec §3.6, flow 2 "Settings"): connection status, token state,
@@ -18,6 +20,7 @@ export default async function WhatsAppSettingsPage({ params }: { params: Promise
   if (!parsed.success) notFound();
   const businessId = parsed.data;
   const state = await orNotFound(getSignupState(user.id, businessId));
+  const pilot: PilotStatusView = await orNotFound(getPilotStatus(user.id, businessId));
   const base = `/businesses/${businessId}/whatsapp`;
   const connected = state.existing?.status === "CONNECTED";
 
@@ -70,6 +73,8 @@ export default async function WhatsAppSettingsPage({ params }: { params: Promise
         </p>
         <p className="text-xs text-zinc-500">Only messages LightDesk actually sends count. Customer messages inbound to you are free; AI drafts pending review never count.</p>
       </section>
+
+      <PilotPanel businessId={businessId} status={pilot} canControl={state.isOwner} />
     </div>
   );
 }

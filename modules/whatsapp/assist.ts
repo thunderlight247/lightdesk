@@ -27,12 +27,13 @@ import { computeDraft, evidenceJson, type DraftErrorKind } from "@/modules/lab/p
 import type { HistoryTurn } from "@/modules/lab/prompt";
 import type { DraftStatus } from "@/modules/lab/types";
 import { isSentLike } from "@/modules/whatsapp/statuses";
+import { assertPilotAiCallAllowed } from "@/modules/pilot/service";
 
 export type AssistDeps = { provider?: AiProvider; config?: LabConfig; now?: () => Date };
 
 export type AssistOutcome =
   | { produced: true; draftMessageId: string; status: DraftStatus; usedAi: boolean; escalated: boolean }
-  | { produced: false; reason: "not_ai_assist" | "resolved" | "no_text" | "duplicate" | "rate_limited" | "failed"; errorKind?: DraftErrorKind };
+  | { produced: false; reason: "not_ai_assist" | "resolved" | "no_text" | "duplicate" | "rate_limited" | "pilot_blocked" | "failed"; errorKind?: DraftErrorKind };
 
 const STALE_RUNNING_MS = 120_000; // same in-flight expiry as the lab
 
@@ -59,6 +60,20 @@ export async function runInboundAssist(
   if (!conv || conv.businessId !== input.businessId) return { produced: false, reason: "not_ai_assist" };
   if (conv.mode !== "AI_ASSIST") return { produced: false, reason: "not_ai_assist" };
   if (conv.status === "RESOLVED") return { produced: false, reason: "resolved" };
+
+  // M7 pilot gate: an enrolled business that is not ACTIVE (consent missing, paused, exited)
+  // gets no drafting at all, and the enrolled-ACTIVE case is additionally bounded by the
+  // per-business daily AI cap. Checked BEFORE the hourly cap and before any AI call.
+  const pilotReasons = await assertPilotAiCallAllowed(input.businessId, now);
+  if (pilotReasons) {
+    await recordAudit(prisma, {
+      action: "pilot.cap.blocked", businessId: input.businessId,
+      targetType: "WhatsAppConversation", targetId: input.conversationId,
+      metadata: { reason: pilotReasons.join(" ") },
+    });
+    return { produced: false, reason: "pilot_blocked" };
+  }
+
   // Only text messages are drafted; images/buttons and coexistence echoes are handled elsewhere.
   if (input.text === null) return { produced: false, reason: "no_text" };
   const customerText = input.text;
