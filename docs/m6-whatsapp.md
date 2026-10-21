@@ -239,6 +239,18 @@ Status callbacks (delivered / read / failed with error payload) update the
 `WhatsAppMessage` record; failures surface to the owner in the conversation view with the
 error reason, never raw Graph codes.
 
+**Implemented (2026-10-21).** `parseInboundPayload` returns grouped, typed status events
+(`statuses[].statuses` with wamid, status, timestamp and sanitized error payloads); the
+webhook route feeds them to `processStatusUpdates` (spec §3.5): monotonic transitions only
+(SENT → DELIVERED → READ, FAILED only before READ), scoped to this connection's OUTBOUND
+rows (tenant isolation), failures stored in `errorInfo` with the human-readable reason and
+audited (`whatsapp.message.failed`) — nothing is ever auto-resent. The response includes
+`statusUpdated`. The conversation console renders the failure reason on the message.
+Covered by unit parse tests and `tests/integration/whatsapp-status.test.ts` (advance,
+no-backwards, failure audit, unknown wamid, inbound rows untouched, cross-tenant isolation,
+unknown statuses). Proven live during the 2026-10-21 end-to-end run (POST from Meta came
+with a status event; counted and routed).
+
 ### 3.6 Onboarding UX (Embedded Signup)
 
 Two flows, one page (`/businesses/[businessId]/whatsapp`):

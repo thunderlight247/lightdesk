@@ -210,8 +210,9 @@ describe("parseInboundPayload", () => {
       } }] }],
     });
     expect(out1.messages[0]?.text?.length).toBe(4000);
-    expect(parseInboundPayload(null)).toEqual({ messages: [], statusEvents: 0 });
-    expect(parseInboundPayload({ nonsense: true })).toEqual({ messages: [], statusEvents: 0 });
+    // The parse contract legitimately grew with M6d status callbacks; keep the shape assertion complete.
+    expect(parseInboundPayload(null)).toEqual({ messages: [], statuses: [], statusEvents: 0 });
+    expect(parseInboundPayload({ nonsense: true })).toEqual({ messages: [], statuses: [], statusEvents: 0 });
     expect(parseInboundPayload({ entry: [{ changes: [{ field: "messages", value: { metadata: {}, messages: [{ from: "x" }] } }] }] }).messages).toEqual([]);
   });
 });
@@ -301,5 +302,45 @@ describe("listWabas / listWabaPhoneNumbers", () => {
         { id: "222", displayPhoneNumber: null, name: null },
       ]);
     }
+  });
+});
+
+describe("parseInboundPayload: delivery statuses", () => {
+  it("produces grouped, typed status events with error payloads and keeps the count contract", () => {
+    const out = parseInboundPayload({
+      entry: [{ id: "WABA", changes: [{ field: "messages", value: {
+        metadata: { phone_number_id: "PNID" },
+        statuses: [
+          { id: "wamid.S1", status: "delivered", timestamp: "1792555000" },
+          { id: "wamid.S2", status: "failed", timestamp: "1792555001", errors: [
+            { code: 131031, title: "Business Account locked", message: "Business Account locked", error_data: { details: "Business account has been locked." } },
+            { garbage: true },
+          ] },
+          { broken: "skip-me" },
+        ],
+      } }] }, { changes: [] }],
+    });
+    expect(out.statusEvents).toBe(3);
+    expect(out.statuses).toHaveLength(1);
+    expect(out.statuses[0].phoneNumberId).toBe("PNID");
+    expect(out.statuses[0].statuses).toHaveLength(2);
+    expect(out.statuses[0].statuses[0]).toEqual({ wamid: "wamid.S1", status: "delivered", timestamp: 1792555000, errors: [] });
+    expect(out.statuses[0].statuses[1]).toEqual({
+      wamid: "wamid.S2", status: "failed", timestamp: 1792555001,
+      errors: [{ code: 131031, title: "Business Account locked", message: "Business Account locked", details: "Business account has been locked." }],
+    });
+  });
+
+  it("survives a payload with only statuses and no messages", () => {
+    const out = parseInboundPayload({
+      entry: [{ changes: [{ field: "messages", value: {
+        metadata: { phone_number_id: "PNID" },
+        statuses: [{ id: "wamid.R1", status: "read" }],
+      } }] }],
+    });
+    expect(out.messages).toEqual([]);
+    expect(out.statuses).toHaveLength(1);
+    expect(out.statuses[0].statuses[0]).toMatchObject({ wamid: "wamid.R1", status: "read" });
+    expect(out.statusEvents).toBe(1);
   });
 });

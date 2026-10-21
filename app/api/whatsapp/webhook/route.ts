@@ -9,7 +9,7 @@
  */
 import { readWhatsappConfig } from "@/modules/whatsapp/config";
 import { runInboundAssist } from "@/modules/whatsapp/assist";
-import { recordInboundMessage } from "@/modules/whatsapp/service";
+import { processStatusUpdates, recordInboundMessage } from "@/modules/whatsapp/service";
 import { parseInboundPayload, verifyWebhookSignature, verifyWebhookToken } from "@/modules/whatsapp/webhooks";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
   } catch {
     return new Response("bad request", { status: 400, headers: noStore });
   }
-  const { messages } = parseInboundPayload(payload);
+  const { messages, statuses } = parseInboundPayload(payload);
   let stored = 0;
   let unknown = 0;
   for (const msg of messages) {
@@ -80,5 +80,16 @@ export async function POST(req: Request) {
       unknown += 1;
     }
   }
-  return Response.json({ received: stored, unknown }, { headers: noStore });
+  // M6d: delivery/read statuses update the outbound rows (monotonic, tenant-scoped; failures
+  // store the reason and are audited). Status processing failures must never break the 200.
+  let statusUpdated = 0;
+  for (const group of statuses) {
+    try {
+      const result = await processStatusUpdates(group.phoneNumberId, group.statuses);
+      statusUpdated += result.updated;
+    } catch (err) {
+      console.error("[whatsapp-webhook] status processing failure", err instanceof Error ? err.name : typeof err);
+    }
+  }
+  return Response.json({ received: stored, unknown, statusUpdated }, { headers: noStore });
 }

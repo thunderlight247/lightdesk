@@ -4,6 +4,7 @@
  * ever happens here. There is no send path in this module yet — outbound is M6d by design.
  */
 import { Prisma } from "@prisma/client";
+import type { WhatsAppMessageStatus } from "@prisma/client";
 import { prisma } from "@/lib/db/client";
 import { recordAudit } from "@/modules/audit/service";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/lib/security/errors";
@@ -187,7 +188,8 @@ export async function getWhatsAppConversation(actorId: string, businessId: strin
         orderBy: { createdAt: "asc" },
         select: {
           id: true, direction: true, text: true, type: true, status: true, timestampSent: true, createdAt: true, fromOwnerApp: true,
-          // M6c review-surface fields:
+          // M6c review-surface fields + M6d status-callback reason:
+          errorInfo: true,
           draftState: true, source: true, resultStatus: true, reason: true, missingInformation: true,
           escalationReason: true, evidence: true, profileRevision: true, approvedContent: true,
         },
@@ -371,4 +373,55 @@ export async function setConversationMode(
     }
     return change;
   });
+}
+
+// ---- M6d: delivery status callbacks -----------------------------------------------------------------------
+// Meta reports sent/delivered/read/failed for OUTBOUND rows. Transitions are monotonic
+// (SENT -> DELIVERED -> READ; FAILED only before READ), scoped to this connection's rows
+// (tenant isolation), failures store the reason and are audited; other statuses just move
+// the row so the owner console always shows the freshest truth.
+
+const STATUS_RANK: Readonly<Record<string, number>> = { SENT: 1, DELIVERED: 2, READ: 3, FAILED: 4 };
+
+export type StatusUpdateResult = { updated: number; ignored: number };
+
+export async function processStatusUpdates(
+  phoneNumberId: string,
+  statuses: { wamid: string; status: string; timestamp: number | null; errors: { code: number | null; title: string | null; message: string | null; details: string | null }[] }[],
+): Promise<StatusUpdateResult> {
+  const connection = await resolveConnection(phoneNumberId);
+  if (!connection) return { updated: 0, ignored: statuses.length };
+  let updated = 0;
+  let ignored = 0;
+  for (const s of statuses) {
+    const target = s.status.toUpperCase();
+    const rank = STATUS_RANK[target];
+    if (rank === undefined) { ignored += 1; continue; }
+    const row = await prisma.whatsAppMessage.findUnique({
+      where: { wamid: s.wamid },
+      select: { id: true, connectionId: true, direction: true, status: true },
+    });
+    if (!row || row.connectionId !== connection.id || row.direction !== "OUTBOUND") { ignored += 1; continue; }
+    const currentRank = STATUS_RANK[row.status] ?? 0;
+    if (rank <= currentRank) { ignored += 1; continue; } // monotonic: never move backwards
+    const failure = target === "FAILED" ? s.errors.at(-1) : undefined;
+    await prisma.whatsAppMessage.update({
+      where: { id: row.id },
+      data: {
+        status: target as WhatsAppMessageStatus, // validated: only these four statuses pass the rank map
+        ...(target === "FAILED"
+          ? { errorInfo: { code: failure?.code ?? null, title: failure?.title ?? null, details: failure?.details ?? failure?.message ?? null } as unknown as Prisma.InputJsonValue }
+          : {}),
+      },
+    });
+    if (target === "FAILED") {
+      await recordAudit(prisma, {
+        action: "whatsapp.message.failed", businessId: connection.businessId,
+        targetType: "WhatsAppMessage", targetId: row.id,
+        metadata: { reason: failure?.details ?? failure?.title ?? failure?.message ?? "delivery failed" },
+      });
+    }
+    updated += 1;
+  }
+  return { updated, ignored };
 }

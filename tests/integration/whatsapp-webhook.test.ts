@@ -137,7 +137,7 @@ describe("webhook POST inbound pipeline", () => {
     const { bizA } = await makeConnection();
     const res = await POST(postRequest(inboundBody));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ received: 1, unknown: 0 });
+    expect(await res.json()).toEqual({ received: 1, unknown: 0, statusUpdated: 0 });
 
     const conv = await prisma.whatsAppConversation.findFirstOrThrow({ where: { businessId: bizA.id } });
     expect(conv.mode).toBe("OWNER_ONLY");
@@ -152,7 +152,7 @@ describe("webhook POST inbound pipeline", () => {
 
     // Webhook retry of the same wamid is stored exactly once.
     const res2 = await POST(postRequest(inboundBody));
-    expect(await res2.json()).toEqual({ received: 0, unknown: 0 });
+    expect(await res2.json()).toEqual({ received: 0, unknown: 0, statusUpdated: 0 });
     expect(await prisma.whatsAppMessage.count()).toBe(1);
     expect(await prisma.whatsAppConversation.count()).toBe(1);
   });
@@ -163,7 +163,7 @@ describe("webhook POST inbound pipeline", () => {
     const unknownBody = inboundBody.replace("PN1", "PN-UNKNOWN").replaceAll("wamid.TEST1", "wamid.TEST9");
     const res = await POST(postRequest(unknownBody));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ received: 0, unknown: 1 });
+    expect(await res.json()).toEqual({ received: 0, unknown: 1, statusUpdated: 0 });
     expect(await prisma.whatsAppMessage.count()).toBe(0);
   });
 
@@ -171,7 +171,7 @@ describe("webhook POST inbound pipeline", () => {
     await makeConnection({ status: "DISCONNECTED" });
     const res = await POST(postRequest(inboundBody));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ received: 0, unknown: 1 });
+    expect(await res.json()).toEqual({ received: 0, unknown: 1, statusUpdated: 0 });
     expect(await prisma.whatsAppMessage.count()).toBe(0);
   });
 

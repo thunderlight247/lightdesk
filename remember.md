@@ -810,6 +810,31 @@ continue only with the next explicitly requested task.
 
 ## 15. Change log
 
+-   **2026-10-21 (M6 LIVE end-to-end run + status callbacks):** The full M6 loop ran LIVE:
+    Meta's webhook verified against a fresh tunnel, real customer messages from the owner's
+    phone (Light, 2335942… ) processed through AI_ASSIST, and the owner send gate SUCCEEDED
+    against live Graph: `wamid…RgSN0MxRENEOTJGQjA2RkM5RjlB` accepted, SENT row, meter 1/1000,
+    audited with `fromDraftId`. The real Gemini draft for "Do you deliver to kumasi" used
+    `gemini-3.5-flash`, 544 tokens (500 prompt / 44 completion, ~12.9s), grounded in the
+    approved delivery fact ("Hello, we do not deliver. thank you", ANSWERABLE); message 1
+    ("message 1") took the deterministic NEEDS_INFORMATION path with the conversation
+    ESCALATED — both per design.
+    Runbook caveats learned: BOTH inbound payloads were reconstructed via signed replays of
+    Meta's exact body bytes after Meta's direct delivery POSTs only carried a subscription
+    ping and status events (and one legit delivery hit during the dev-DB outage); Meta
+    redelivery would dedupe by wamid, so the stored state is identical, but the direct wire
+    completion should be re-proven in a quieter environment. A transient Meta
+    `131031 "Business Account locked"` status was observed on a status event and had
+    cleared before the real send. Quick-tunnel URLs change on every restart and the dev
+    rig (server + DB container) went down twice during the run — re-registered + restarted
+    each time; short pilot deployments should not rely on cloudflared quick tunnels.
+    Gap fixed in the same session as part of the follow-up: delivery/read status callbacks
+    now UPDATE rows (`processStatusUpdates`: monotonic SENT→DELIVERED→READ, FAILED only
+    before READ; tenant-scoped; store the failure reason in `errorInfo`; audit
+    `whatsapp.message.failed`; never auto-resend) via grouped typed parsing in
+    `parseInboundPayload`; route response gained `statusUpdated`; the console renders the
+    failure reason on the message. Tests: 6 integration
+    (`tests/integration/whatsapp-status.test.ts`) + 2 unit parse tests.
 -   **2026-10-21 (M6d Embedded Signup UI + onboarding service):** Implemented the last M6d
     piece: owner-driven connection of a real WhatsApp number through Meta's Embedded Signup.
     New graph helpers (code exchange, long-lived token upgrade, WABA/number discovery) in

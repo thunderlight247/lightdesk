@@ -182,7 +182,7 @@ describe("M6c AI-assist drafting (owner control preserved)", () => {
     expect(provider.calls).toHaveLength(1);
     expect(await prisma.whatsAppGeneration.count({ where: { conversationId: conversation.id } })).toBe(1);
     const retryRes = await POST(signedPost(webhookBody("wamid.AST-D1", "Do you deliver?")));
-    expect(await retryRes.json()).toEqual({ received: 0, unknown: 0 });
+    expect(await retryRes.json()).toEqual({ received: 0, unknown: 0, statusUpdated: 0 });
     expect(await prisma.whatsAppMessage.count({ where: { conversationId: conversation.id, draftState: "DRAFT" } })).toBe(1);
   });
 

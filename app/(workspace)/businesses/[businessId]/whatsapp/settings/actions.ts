@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/guards";
 import { actionError } from "@/lib/validation/action-state";
-import { businessIdSchema, parseOrThrow } from "@/lib/validation/schemas";
+import { businessIdSchema } from "@/lib/validation/schemas";
 import {
   completeEmbeddedSignupChoice, disconnectWhatsAppConnection, startEmbeddedSignup,
   type SignupOutcome,

@@ -15,9 +15,22 @@ export type InboundMessage = {
   timestamp: number | null; // unix seconds from Meta, if present
 };
 
+export type InboundStatus = {
+  wamid: string;
+  status: string; // "sent" | "delivered" | "read" | "failed" — stored as received
+  timestamp: number | null;
+  errors: { code: number | null; title: string | null; message: string | null; details: string | null }[];
+};
+
+export type ParsedStatusGroup = {
+  phoneNumberId: string;
+  statuses: InboundStatus[];
+};
+
 export type ParsedInbound = {
   messages: InboundMessage[];
-  statusEvents: number; // counted only; delivery-status handling is M6d
+  statuses: ParsedStatusGroup[];
+  statusEvents: number; // kept for the documented count contract; equals sum of group sizes
 };
 
 const MAX_TEXT_CHARS = 4000;
@@ -25,22 +38,42 @@ const MAX_TEXT_CHARS = 4000;
 /** Meta's body shape; anything malformed or truncated is handled defensively. */
 export function parseInboundPayload(value: unknown): ParsedInbound {
   const messages: InboundMessage[] = [];
+  const statuses: ParsedStatusGroup[] = [];
   let statusEvents = 0;
   const root = value as
     | { entry?: { id?: unknown; changes?: { field?: unknown; value?: {
         metadata?: { phone_number_id?: unknown }; contacts?: { profile?: { name?: unknown } }[];
         messages?: { id?: unknown; from?: unknown; type?: unknown; timestamp?: unknown; text?: { body?: unknown } }[];
-        statuses?: unknown[];
+        statuses?: { id?: unknown; status?: unknown; timestamp?: unknown; errors?: { code?: unknown; title?: unknown; message?: unknown; error_data?: { details?: unknown } }[] }[];
       } }[] }[] }
     | null | undefined;
-  if (!root || !Array.isArray(root.entry)) return { messages: [], statusEvents: 0 };
+  if (!root || !Array.isArray(root.entry)) return { messages: [], statuses: [], statusEvents: 0 };
   for (const entry of root.entry) {
     if (!entry || !Array.isArray(entry.changes)) continue;
     for (const change of entry.changes) {
       if (!change || change.field !== "messages" || !change.value) continue;
       const phoneNumberId = typeof change.value.metadata?.phone_number_id === "string" ? change.value.metadata.phone_number_id : null;
       if (!phoneNumberId) continue;
-      if (Array.isArray(change.value.statuses)) statusEvents += change.value.statuses.length;
+      if (Array.isArray(change.value.statuses)) {
+        statusEvents += change.value.statuses.length;
+        const group: InboundStatus[] = [];
+        for (const s of change.value.statuses) {
+          if (typeof s?.id !== "string" || typeof s?.status !== "string") continue; // can't target a row without the id
+          const errors = Array.isArray(s.errors)
+            ? s.errors
+              .filter((e): e is { code?: unknown; title?: unknown; message?: unknown; error_data?: { details?: unknown } } => !!e &&
+                (typeof e.code === "number" || typeof e.title === "string" || typeof e.message === "string" || (typeof e.error_data?.details === "string")))
+              .map((e) => ({
+                code: typeof e.code === "number" ? e.code : null,
+                title: typeof e.title === "string" ? e.title.slice(0, 300) : null,
+                message: typeof e.message === "string" ? e.message.slice(0, 300) : null,
+                details: typeof e.error_data?.details === "string" ? e.error_data.details.slice(0, 500) : null,
+              }))
+            : [];
+          group.push({ wamid: s.id, status: s.status, timestamp: typeof s.timestamp === "string" && /^\d+$/.test(s.timestamp) ? Number(s.timestamp) : null, errors });
+        }
+        if (group.length > 0) statuses.push({ phoneNumberId, statuses: group });
+      }
       const profileName = Array.isArray(change.value.contacts) && typeof change.value.contacts[0]?.profile?.name === "string"
         ? change.value.contacts[0].profile.name.slice(0, 120) : null;
       if (!Array.isArray(change.value.messages)) continue;
@@ -53,7 +86,7 @@ export function parseInboundPayload(value: unknown): ParsedInbound {
       }
     }
   }
-  return { messages, statusEvents };
+  return { messages, statuses, statusEvents };
 }
 
 /**

@@ -62,6 +62,9 @@ export default async function WhatsAppConversationPage({ params }: { params: Pro
                 {!isDraft && !isSuperseded && <span>· {message.type} · {message.status.toLowerCase()}</span>}
               </p>
               <p className="whitespace-pre-wrap break-words text-sm">{message.text ?? `[${message.type} message]`}</p>
+              {message.errorInfo !== null && (typeof (message.errorInfo as { details?: unknown } | null)?.details === "string") && (
+                <p className="mt-1 text-xs text-red-700">Delivery failure: {(message.errorInfo as { details?: unknown }).details as string}</p>
+              )}
               <time className="mt-2 block text-right text-[11px] text-zinc-500">{fmtDateTime(message.timestampSent ?? message.createdAt)}</time>
             </article>
           );
