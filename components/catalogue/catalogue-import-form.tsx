@@ -6,11 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Alert, Field, Textarea } from "@/components/ui/field";
 import type { ActionState } from "@/lib/validation/action-state";
 
-const SAMPLE_CSV = `name,price,category,inStock,variants
-"Nike Air Max 90",450.00,"Shoes",true,"Sizes: 40-44"
-"Men Casual Shirt",120.00,"Clothing",true,"Sizes: M, L, XL"
-"Wireless Earbuds",85.00,"Electronics",false,"Black only"`;
-
 export function CatalogueImportForm({ businessId }: { businessId: string }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(stageBulkImportAction, {});
   const ref = useRef<HTMLFormElement>(null);
@@ -36,7 +31,7 @@ export function CatalogueImportForm({ businessId }: { businessId: string }) {
           name="csvContent"
           rows={6}
           required
-          placeholder={SAMPLE_CSV}
+          placeholder="Paste CSV data with a header row"
         />
       </Field>
 

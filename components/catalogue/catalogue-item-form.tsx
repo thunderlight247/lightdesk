@@ -47,7 +47,7 @@ export function CatalogueItemForm({
             required
             maxLength={120}
             defaultValue={item?.name ?? ""}
-            placeholder="e.g. iPhone 13 128GB or African Print Maxi Dress"
+            placeholder="Enter product or service name"
           />
         </Field>
 
@@ -60,7 +60,7 @@ export function CatalogueItemForm({
             min="0"
             required
             defaultValue={item ? String(item.priceGhs) : ""}
-            placeholder="e.g. 450.00"
+            placeholder="Enter price"
           />
         </Field>
       </div>
@@ -72,7 +72,7 @@ export function CatalogueItemForm({
             name="category"
             maxLength={80}
             defaultValue={item?.category ?? ""}
-            placeholder="e.g. Phones, Footwear"
+            placeholder="Enter category"
           />
         </Field>
 
@@ -82,7 +82,7 @@ export function CatalogueItemForm({
             name="variants"
             maxLength={200}
             defaultValue={item?.variants ?? ""}
-            placeholder="e.g. Sizes 40-44 | Colors: Black, Blue"
+            placeholder="Enter sizes, colors, or options"
           />
         </Field>
 
@@ -92,7 +92,7 @@ export function CatalogueItemForm({
             name="sku"
             maxLength={50}
             defaultValue={item?.sku ?? ""}
-            placeholder="e.g. NKE-402-BLK"
+            placeholder="Enter SKU or item code"
           />
         </Field>
       </div>
