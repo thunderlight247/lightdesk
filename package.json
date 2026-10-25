@@ -19,6 +19,7 @@
     "db:deploy": "prisma migrate deploy",
     "bootstrap:admin": "tsx --env-file=.env scripts/bootstrap-admin.ts",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "check:commits": "bash scripts/check-commits.sh",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
