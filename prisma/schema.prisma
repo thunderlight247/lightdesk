@@ -109,6 +109,21 @@ model Session {
   @@index([expiresAt])
 }
 
+// ---- M8 Phase 3: login throttling ------------------------------------------------------
+// One row per FAILED sign-in attempt only (successes are not throttling data). The
+// rolling windows in modules/identity/throttle.ts count these per client ip and per
+// attempted address; rows are pruned by housekeeping after the longest window.
+// Deliberately NOT an AuditEvent: operational, high-volume, prunable.
+model LoginFailure {
+  id        String   @id @default(cuid())
+  ip        String   // client ip as seen by the server; "unknown" when no proxy header
+  email     String   // lowercased attempted address (the login schema normalises it)
+  createdAt DateTime @default(now())
+
+  @@index([ip, createdAt])
+  @@index([email, createdAt])
+}
+
 model Business {
   id          String         @id @default(cuid())
   name        String

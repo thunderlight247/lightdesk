@@ -15,6 +15,10 @@ export default defineConfig({
     env: {
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? "",
       APP_URL: "http://localhost:3000",
+      // Pinned so tests assert against fixed throttle budgets, not drifting lib/env defaults.
+      LOGIN_MAX_FAILURES_PER_IP: "10",
+      LOGIN_MAX_FAILURES_PER_EMAIL: "5",
+      LOGIN_FAILURE_WINDOW_MINUTES: "10",
     },
   },
 });
