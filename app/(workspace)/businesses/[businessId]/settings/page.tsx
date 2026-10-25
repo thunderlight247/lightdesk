@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BusinessSettingsForm } from "@/components/forms/business-settings-form";
+import { DeleteBusinessSection } from "@/components/forms/delete-business-form";
 import { loadOverviewOrNotFound, requireUserForPage } from "@/lib/auth/guards";
 
 export default async function BusinessSettingsPage({ params }: { params: Promise<{ businessId: string }> }) {
@@ -32,24 +33,28 @@ export default async function BusinessSettingsPage({ params }: { params: Promise
       />
 
       {capabilities.canRename && (
-        <section aria-labelledby="privacy-heading" className="card space-y-3 p-5">
-          <h2 id="privacy-heading" className="text-sm font-semibold text-zinc-900">
-            Privacy &amp; Data Management
-          </h2>
-          <p className="text-sm text-zinc-600">
-            Export a complete machine-readable JSON archive of this business&apos;s records, including
-            knowledge profile, catalog, WhatsApp conversation history, and audit metadata.
-          </p>
-          <div>
-            <a
-              href={`/api/businesses/${business.id}/export`}
-              download
-              className="inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
-            >
-              Download data export (JSON)
-            </a>
-          </div>
-        </section>
+        <>
+          <section aria-labelledby="privacy-heading" className="card space-y-3 p-5">
+            <h2 id="privacy-heading" className="text-sm font-semibold text-zinc-900">
+              Privacy &amp; Data Management
+            </h2>
+            <p className="text-sm text-zinc-600">
+              Export a complete machine-readable JSON archive of this business&apos;s records, including
+              knowledge profile, catalog, WhatsApp conversation history, and audit metadata.
+            </p>
+            <div>
+              <a
+                href={`/api/businesses/${business.id}/export`}
+                download
+                className="inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-900"
+              >
+                Download data export (JSON)
+              </a>
+            </div>
+          </section>
+
+          <DeleteBusinessSection businessId={business.id} businessName={business.name} />
+        </>
       )}
     </div>
   );
