@@ -14,6 +14,13 @@ import { sendWhatsAppText } from "@/modules/whatsapp/graph";
 import { readWhatsappConfig } from "@/modules/whatsapp/config";
 import { pendingInboundForAssist, runInboundAssist } from "@/modules/whatsapp/assist";
 import { SENT_LIKE_STATUSES } from "@/modules/whatsapp/statuses";
+import { flushDueMessages, recordSendFailure, recordSendSuccess } from "@/modules/whatsapp/outbox";
+import {
+  QUEUE_MAX_ATTEMPTS,
+  QUEUE_UNKNOWN_MAX_ATTEMPTS,
+  SERVICE_WINDOW_MS,
+  queueBackoffDelayMs,
+} from "@/modules/whatsapp/queue-policy";
 import { requireMembership, requirePermission } from "@/modules/permissions/access";
 import { can } from "@/modules/permissions/roles";
 import type { InboundMessage } from "@/modules/whatsapp/webhooks";
@@ -79,6 +86,14 @@ export async function recordInboundMessage(msg: InboundMessage): Promise<Recorde
       });
       return { duplicate: false, conversationId: conversation.id };
     });
+    // ADR 0010 trigger 1: the customer just messaged — this is the most natural moment to
+    // drain the outage queue (a talking customer has a due reply flushed by their own message).
+    // Best-effort: a flush problem must never drop the inbound message which was already stored.
+    try {
+      await flushDueMessages(connection.id, { limit: 10 });
+    } catch (flushErr) {
+      if (!(flushErr instanceof NotFoundError)) console.warn("outbox flush failed after inbound record", flushErr);
+    }
     return { connection, duplicate: result.duplicate, conversationId: result.conversationId };
   } catch (err) {
     if (isUnique(err)) {
@@ -93,7 +108,9 @@ export async function recordInboundMessage(msg: InboundMessage): Promise<Recorde
 // ---- M6d: outbound send gate (owner-approved replies only) ----------------------------------------------
 
 export const FREE_SERVICE_MESSAGES_PER_MONTH = 1000;
-export const SERVICE_WINDOW_MS = 24 * 3_600_000;
+// Re-exported so existing callers of this module keep working (ADR 0010 moved the
+// shared window constant into queue-policy.ts, which the outbox flush also uses).
+export { SERVICE_WINDOW_MS } from "@/modules/whatsapp/queue-policy";
 const MAX_OUTBOUND_TEXT_CHARS = 4000;
 
 export type SendDeps = { fetchImpl?: typeof fetch; now?: () => Date };
@@ -138,6 +155,16 @@ export async function getSendReadiness(actorId: string, businessId: string, conv
   // M7: pilot caps and consent state ride along so every console shows the truth.
   const caps = await checkUsageCaps(businessId, now);
   const pilot = await requirePilotActive(businessId);
+  // M8 (ADR 0010): outage-queue and provider-health facts, so every console shows the truth.
+  const connectionState = await prisma.whatsAppConnection.findUnique({
+    where: { id: conv.connectionId },
+    select: { providerDownSince: true, consecutiveSendFailures: true },
+  });
+  const queuedRows = await prisma.whatsAppMessage.findMany({
+    where: { conversationId, connectionId: conv.connectionId, status: "QUEUED" },
+    orderBy: [{ nextAttemptAt: "asc" }, { queuedAt: "asc" }],
+    select: { queuedAt: true, nextAttemptAt: true },
+  });
   return {
     mode: conv.mode as string,
     status: conv.status as string,
@@ -147,20 +174,32 @@ export async function getSendReadiness(actorId: string, businessId: string, conv
     meterFree: Math.max(FREE_SERVICE_MESSAGES_PER_MONTH - meterUsed, 0),
     pilotOk: pilot.ok,
     pilotCapped: caps.outboundCap !== null && caps.outboundUsed >= caps.outboundCap,
+    // One approved reply at a time: the send gate while a queued row is retrying.
+    queued: queuedRows.length > 0
+      ? { count: queuedRows.length, oldestQueuedAt: queuedRows[0].queuedAt, nextRetryAt: queuedRows[0].nextAttemptAt }
+      : null,
+    // Derived evidence only: the breaker never blocks a send by itself (ADR 0010 §6).
+    providerDegraded: connectionState?.providerDownSince
+      ? { since: connectionState.providerDownSince, failures: connectionState.consecutiveSendFailures }
+      : null,
   };
 }
 
 export type SendOutcome =
   | { sent: true; wamid: string; meterUsed: number; meterFree: number }
-  | { sent: false; reason: string; meterUsed: number; meterFree: number };
+  | { sent: false; reason: string; meterUsed: number; meterFree: number; queued?: boolean };
 
 export async function listWhatsAppConversations(actorId: string, businessId: string) {
   await requirePermission(actorId, businessId, "whatsapp:read");
   const connection = await prisma.whatsAppConnection.findFirst({
     where: { businessId, status: "CONNECTED" },
-    select: { id: true, displayPhoneNumber: true, coexistence: true, status: true },
+    select: { id: true, displayPhoneNumber: true, coexistence: true,      status: true },
   });
-  if (!connection) return { connection: null, conversations: [] };
+  if (!connection) return { connection: null, conversations: [], queuedCount: 0, providerDegraded: null };
+  // ADR 0010 trigger 1: reading the inbox is a chance to drain the outage queue before it renders.
+  await flushDueMessages(connection.id, { limit: 10 }).catch((err) => {
+    if (!(err instanceof NotFoundError)) throw err; // connection gone mid-flush: just render
+  });
   const conversations = await prisma.whatsAppConversation.findMany({
     where: { businessId, connectionId: connection.id },
     orderBy: { lastMessageAt: "desc" },
@@ -171,8 +210,19 @@ export async function listWhatsAppConversations(actorId: string, businessId: str
       messages: { orderBy: { createdAt: "desc" }, take: 1, select: { text: true, type: true, direction: true } },
     },
   });
+  const [queuedCount, connState] = await Promise.all([
+    prisma.whatsAppMessage.count({ where: { connectionId: connection.id, status: "QUEUED" } }),
+    prisma.whatsAppConnection.findUnique({
+      where: { id: connection.id },
+      select: { providerDownSince: true, consecutiveSendFailures: true },
+    }),
+  ]);
   return {
     connection,
+    queuedCount,
+    providerDegraded: connState?.providerDownSince
+      ? { since: connState.providerDownSince, failures: connState.consecutiveSendFailures }
+      : null,
     conversations: conversations.map(({ _count, messages, ...c }) => ({
       ...c,
       messageCount: _count.messages,
@@ -193,6 +243,8 @@ export async function getWhatsAppConversation(actorId: string, businessId: strin
         orderBy: { createdAt: "asc" },
         select: {
           id: true, direction: true, text: true, type: true, status: true, timestampSent: true, createdAt: true, fromOwnerApp: true,
+          // M8 (ADR 0010): queue bookkeeping shown on the review surface:
+          queuedAt: true, nextAttemptAt: true, attempts: true,
           // M6c review-surface fields + M6d status-callback reason:
           errorInfo: true,
           draftState: true, source: true, resultStatus: true, reason: true, missingInformation: true,
@@ -202,6 +254,10 @@ export async function getWhatsAppConversation(actorId: string, businessId: strin
     },
   });
   if (!conversation) throw new NotFoundError("Conversation not found");
+  // ADR 0010 trigger 1: opening the conversation may first deliver a due queued reply.
+  await flushDueMessages(conversation.connectionId, { limit: 10 }).catch((err) => {
+    if (!(err instanceof NotFoundError)) throw err; // connection gone mid-flush: just render
+  });
   const readiness = await getSendReadiness(actorId, businessId, conversationId);
   const latestDraft = [...conversation.messages].reverse().find((m) => m.draftState === "DRAFT") ?? null;
   return { conversation, readiness, latestDraft };
@@ -230,10 +286,30 @@ export async function sendOwnerReply(
     throw new NotFoundError("The WhatsApp connection is not active.");
   }
 
+  // ADR 0010 trigger 1: every owner send attempt first drains the outage queue for this
+  // connection — an earlier approved reply may still be deliverable.
+  await flushDueMessages(connection.id, { now: () => now, fetchImpl: deps.fetchImpl, limit: 10 }).catch((err) => {
+    if (!(err instanceof NotFoundError)) throw err;
+  });
+
   const meterUsed0 = await prisma.whatsAppMessage.count({
     where: { connectionId: conv.connectionId, direction: "OUTBOUND", status: { in: SENT_LIKE_STATUSES }, createdAt: { gte: firstOfMonth(now) } },
   });
   const meterFree = Math.max(FREE_SERVICE_MESSAGES_PER_MONTH - meterUsed0, 0);
+
+  // ADR 0010: one approved reply at a time for a conversation — a queued row blocks new sends
+  // until it sends, is cancelled or expires (the console disables the form for the same reason).
+  const pendingQueued = await prisma.whatsAppMessage.findFirst({
+    where: { conversationId: conv.id, status: "QUEUED" },
+    select: { id: true },
+  });
+  if (pendingQueued) {
+    return {
+      sent: false,
+      reason: "An earlier approved reply is still queued for retry. Cancel or wait for it to send before composing a new one.",
+      meterUsed: meterUsed0, meterFree,
+    };
+  }
 
   // M7 pilot control layer: consent gate first (nothing restricted works without an active
   // pilot), then the hard monthly outbound cap — BOTH before the token read and any Graph
@@ -280,12 +356,56 @@ export async function sendOwnerReply(
   }, { fetchImpl: deps.fetchImpl });
 
   if (!result.ok) {
+    if (result.retryable && result.kind !== "PERMANENT") {
+      // ADR 0010 §3/§4: a transient outage queues the approved text instead of losing it.
+      // QUEUED rows never count toward the meter (statuses.ts), and the owner's reviewed draft
+      // is consumed exactly as on a successful send.
+      const attempts = 1;
+      const maxAttempts = result.kind === "TRANSIENT_ONCE" ? QUEUE_UNKNOWN_MAX_ATTEMPTS : QUEUE_MAX_ATTEMPTS;
+      const queuedRow = await prisma.$transaction(async (tx) => {
+        const created = await tx.whatsAppMessage.create({
+          data: {
+            conversationId: conv.id, connectionId: conv.connectionId, direction: "OUTBOUND",
+            text, type: "text", status: "QUEUED",
+            queuedAt: now,
+            nextAttemptAt: new Date(now.getTime() + queueBackoffDelayMs(attempts, result.retryAfterMs, conv.id)),
+            attempts: 0, maxAttempts, // jitter seed: the row id does not exist yet; conv id is stable
+            lastErrorKind: result.kind, lastErrorAt: now,
+            approvedContent: text, approvedById: actorId, approvedAt: now,
+          },
+        });
+        await tx.whatsAppMessage.updateMany({
+          where: { conversationId: conv.id, draftState: "DRAFT" },
+          data: { draftState: "SUPERSEDED" },
+        });
+        await tx.whatsAppConversation.update({ where: { id: conv.id }, data: { lastMessageAt: now } });
+        await recordAudit(tx, {
+          action: "whatsapp.send.queued", actorUserId: actorId, businessId,
+          targetType: "WhatsAppMessage", targetId: created.id,
+          metadata: {
+            errorKind: result.kind, attempts, maxAttempts,
+            nextRetryAt: created.nextAttemptAt?.toISOString() ?? null,
+          },
+        });
+        return created;
+      });
+      await recordSendFailure(connection.id, now);
+      return {
+        sent: false,
+        reason: `Meta's messaging service is temporarily unavailable. Your approved reply is queued and will retry automatically (first attempt around ${queuedRow.nextAttemptAt?.toISOString() ?? "soon"}). Nothing is lost.`,
+        meterUsed: meterUsed0, meterFree, queued: true,
+      };
+    }
     await recordAudit(prisma, {
       action: "whatsapp.send.failed", actorUserId: actorId, businessId,
-      targetType: "WhatsAppConversation", targetId: conversationId, metadata: { error: "send_error" },
+      targetType: "WhatsAppConversation", targetId: conversationId,
+      metadata: { error: "send_error", errorKind: result.kind },
     });
     return { sent: false, reason: `The WhatsApp send failed: ${result.message}`, meterUsed: meterUsed0, meterFree };
   }
+
+  // Any success closes the breaker (ADR 0010 §6): reset the streak, audit once per transition.
+  await recordSendSuccess(connection.id);
 
   let recordedDuplicate = false;
   try {
@@ -404,7 +524,7 @@ export async function setConversationMode(
 // (tenant isolation), failures store the reason and are audited; other statuses just move
 // the row so the owner console always shows the freshest truth.
 
-const STATUS_RANK: Readonly<Record<string, number>> = { SENT: 1, DELIVERED: 2, READ: 3, FAILED: 4 };
+const STATUS_RANK: Readonly<Record<string, number>> = { QUEUED: 0, SENT: 1, DELIVERED: 2, READ: 3, FAILED: 4 };
 
 export type StatusUpdateResult = { updated: number; ignored: number };
 
@@ -447,4 +567,40 @@ export async function processStatusUpdates(
     updated += 1;
   }
   return { updated, ignored };
+}
+
+// ---- M8 (ADR 0010 §4): owner cancel of a queued, not-yet-sent reply --------------------------
+// Cancel is terminal and simple: status -> FAILED with errorInfo.code = CANCELLED_BY_OWNER.
+// It never re-opens the row as a draft (that would re-create a second lifecycle on one row).
+export async function cancelQueuedSend(
+  actorId: string, businessId: string, conversationId: string, messageId: string,
+): Promise<{ cancelled: boolean }> {
+  const membership = await requireMembership(actorId, businessId);
+  if (!can(membership.role, "whatsapp:send")) throw new ForbiddenError();
+  const conv = await prisma.whatsAppConversation.findFirst({
+    where: { id: conversationId, businessId },
+    select: { id: true },
+  });
+  if (!conv) throw new NotFoundError("Conversation not found");
+  const row = await prisma.whatsAppMessage.findFirst({
+    where: { id: messageId, conversationId: conv.id, status: "QUEUED" },
+    select: { id: true },
+  });
+  if (!row) throw new NotFoundError("Queued reply not found");
+  // Race-guard: only a still-queued row can be cancelled (a concurrent flush flush may have sent it).
+  const { count } = await prisma.whatsAppMessage.updateMany({
+    where: { id: row.id, status: "QUEUED" },
+    data: {
+      status: "FAILED",
+      errorInfo: { code: "CANCELLED_BY_OWNER", title: "Cancelled", details: "The owner cancelled this queued reply before it could be sent." },
+      nextAttemptAt: null,
+    },
+  });
+  if (count === 0) throw new ConflictError("The queued reply already left the queue. Reload and try again.");
+  await recordAudit(prisma, {
+    action: "whatsapp.send.cancelled", actorUserId: actorId, businessId,
+    targetType: "WhatsAppMessage", targetId: row.id,
+    metadata: { conversationId: conversationId },
+  });
+  return { cancelled: true };
 }

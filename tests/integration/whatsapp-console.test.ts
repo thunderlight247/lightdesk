@@ -64,7 +64,7 @@ describe("WhatsApp owner-console reads", () => {
     }
     await expect(listWhatsAppConversations(ownerB.id, bizA.id)).rejects.toMatchObject({ code: "NOT_FOUND" });
     const bizBList = await listWhatsAppConversations(ownerB.id, bizB.id);
-    expect(bizBList).toEqual({ connection: null, conversations: [] });
+    expect(bizBList).toEqual({ connection: null, conversations: [], queuedCount: 0, providerDegraded: null });
   });
 
   it("does not return the encrypted connection token in console results", async () => {

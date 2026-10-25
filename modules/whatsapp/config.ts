@@ -11,8 +11,9 @@ export type WhatsappConfig = {
   accessToken: string | null; // system-user token scoped to the WABA
   businessAccountId: string | null; // WABA id, numeric string
   phoneNumberId: string | null; // phone-number id, numeric string
-  webhookVerifyToken: string | null; // arbitrary string we choose for webhook GET verification
-  signupConfigId: string | null; // Meta embedded-signup configuration id (setup: WHATSAPP_SIGNUP_CONFIG_ID)
+  webhookVerifyToken: string | null; // arbitrary string you choose for webhook GET verification
+  signupConfigId: string | null; // Meta embedded-signup configuration id (WHATSAPP_SIGNUP_CONFIG_ID)
+  outboxFlushToken: string | null; // (ADR 0010) bearer token enabling the outbox cron endpoint; unset = endpoint disabled
   graphApiVersion: string; // e.g. "v26.0"
   issues: string[];
 };
@@ -42,9 +43,13 @@ export function readWhatsappConfig(env: Record<string, string | undefined> = pro
     phoneNumberId: raw("WHATSAPP_PHONE_NUMBER_ID"),
     webhookVerifyToken: raw("WHATSAPP_WEBHOOK_VERIFY_TOKEN"),
     signupConfigId: raw("WHATSAPP_SIGNUP_CONFIG_ID"),
+    outboxFlushToken: raw("WHATSAPP_OUTBOX_FLUSH_TOKEN"),
     graphApiVersion,
     issues,
   };
+  if (config.outboxFlushToken !== null && config.outboxFlushToken.length < 32) {
+    issues.push("WHATSAPP_OUTBOX_FLUSH_TOKEN must be at least 32 characters when set");
+  }
   return config;
 }
 

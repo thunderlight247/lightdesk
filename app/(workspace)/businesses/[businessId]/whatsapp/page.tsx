@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Chip } from "@/components/ui/field";
+import { Alert, Chip } from "@/components/ui/field";
 import { PageHeading } from "@/components/ui/card";
 import { fmtDateTime } from "@/components/profile/format";
 import { orNotFound, requireUserForPage } from "@/lib/auth/guards";
@@ -12,7 +12,7 @@ export default async function WhatsAppInboxPage({ params }: { params: Promise<{ 
   const parsed = businessIdSchema.safeParse((await params).businessId);
   if (!parsed.success) notFound();
   const businessId = parsed.data;
-  const { connection, conversations } = await orNotFound(listWhatsAppConversations(user.id, businessId));
+  const { connection, conversations, queuedCount, providerDegraded } = await orNotFound(listWhatsAppConversations(user.id, businessId));
   const base = `/businesses/${businessId}/whatsapp`;
 
   return (
@@ -22,6 +22,21 @@ export default async function WhatsAppInboxPage({ params }: { params: Promise<{ 
         lead="Live customer conversations connected through the official WhatsApp Cloud API. New conversations are owner-controlled; nothing is sent automatically."
         actions={connection ? <Chip tone="success">Connected · {connection.displayPhoneNumber}</Chip> : undefined}
       />
+
+      {providerDegraded && (
+        <Alert tone="info">
+          Meta&apos;s messaging service has been unavailable since {fmtDateTime(providerDegraded.since)}.{" "}
+          {queuedCount === 0
+            ? "Sending may be slow; no replies are waiting."
+            : `${queuedCount} approved ${queuedCount === 1 ? "reply is" : "replies are"} queued and will be sent automatically. Nothing is lost.`}
+        </Alert>
+      )}
+
+      {!providerDegraded && queuedCount > 0 && (
+        <Alert tone="info">
+          {queuedCount} approved {queuedCount === 1 ? "reply is" : "replies are"} waiting to send (every attempt so far has been retried automatically).
+        </Alert>
+      )}
 
       {!connection ? (
         <section className="card space-y-2 border-dashed p-5">

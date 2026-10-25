@@ -239,6 +239,17 @@ Status callbacks (delivered / read / failed with error payload) update the
 `WhatsAppMessage` record; failures surface to the owner in the conversation view with the
 error reason, never raw Graph codes.
 
+**Outage path (M8, ADR 0010 — implemented).** When the Graph send fails with a *transient*
+error (5xx, timeout, rate limit), the approved reply is no longer lost: it is queued
+(`QUEUED` on the message row, `approvedContent` recorded), audited (`whatsapp.send.queued`),
+and retried by `flushDueMessages` on the next console read, send attempt or inbound webhook
+for that connection, or via the bounded cron endpoint `POST /api/whatsapp/outbox/flush`
+(bearer token `WHATSAPP_OUTBOX_FLUSH_TOKEN`). Backoff `1m → 5m → 20m → 1h → 6h`, max 5
+attempts; the 24-hour service window still governs expiry (`EXPIRED_WINDOW`); a pilot pause
+holds a row rather than failing it; owners can cancel. The console shows outage, queued-next-
+retry and expired banners from `getSendReadiness` (`queued`, `providerDegraded`). See
+`docs/decisions/0010-whatsapp-outbound-outage-queue.md` for the full design and test matrix.
+
 **Implemented (2026-10-21).** `parseInboundPayload` returns grouped, typed status events
 (`statuses[].statuses` with wamid, status, timestamp and sanitized error payloads); the
 webhook route feeds them to `processStatusUpdates` (spec §3.5): monotonic transitions only

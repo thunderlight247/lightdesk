@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/guards";
 import { actionError, type ActionState } from "@/lib/validation/action-state";
 import { businessIdSchema, parseOrThrow } from "@/lib/validation/schemas";
-import { sendOwnerReply, setConversationMode } from "@/modules/whatsapp/service";
+import { cancelQueuedSend, sendOwnerReply, setConversationMode } from "@/modules/whatsapp/service";
 
 export async function sendWhatsAppReplyAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
   try {
@@ -15,11 +15,32 @@ export async function sendWhatsAppReplyAction(_previous: ActionState, formData: 
     const result = await sendOwnerReply(user.id, businessId, conversationId, { text });
     revalidatePath(`/businesses/${businessId}/whatsapp`);
     revalidatePath(`/businesses/${businessId}/whatsapp/${conversationId}`);
-    if (!result.sent) return { error: result.reason };
+    if (!result.sent) {
+      // ADR 0010: a queue outcome is success-with-a-caveat, not an error — the approved text
+      // was NOT lost; the console shows the honest story either way.
+      return result.queued ? { ok: true, message: result.reason } : { error: result.reason };
+    }
     return {
       ok: true,
       message: `Message sent. ${result.meterUsed} of 1,000 free service messages used this month.`,
     };
+  } catch (err) {
+    return actionError(err);
+  }
+}
+
+// M8 (ADR 0010 §4): cancel a queued, not-yet-sent reply. Owner/admin only; the row goes
+// terminal FAILED/CANCELLED_BY_OWNER — it never re-opens as a draft.
+export async function cancelQueuedSendAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    const user = await requireUser();
+    const businessId = parseOrThrow(businessIdSchema, formData.get("businessId"));
+    const conversationId = String(formData.get("conversationId") ?? "");
+    const messageId = String(formData.get("messageId") ?? "");
+    await cancelQueuedSend(user.id, businessId, conversationId, messageId);
+    revalidatePath(`/businesses/${businessId}/whatsapp`);
+    revalidatePath(`/businesses/${businessId}/whatsapp/${conversationId}`);
+    return { ok: true, message: "Queued reply cancelled. Nothing was sent to the customer." };
   } catch (err) {
     return actionError(err);
   }

@@ -4,6 +4,7 @@ import { Chip, Alert } from "@/components/ui/field";
 import { PageHeading } from "@/components/ui/card";
 import { WhatsAppReplyForm } from "@/components/whatsapp/reply-form";
 import { WhatsAppModeControls } from "@/components/whatsapp/mode-controls";
+import { WhatsAppQueuedCancel } from "@/components/whatsapp/queued-cancel";
 import { fmtDateTime } from "@/components/profile/format";
 import { loadMembershipOrNotFound, orNotFound, requireUserForPage } from "@/lib/auth/guards";
 import { businessIdSchema } from "@/lib/validation/schemas";
@@ -43,14 +44,21 @@ export default async function WhatsAppConversationPage({ params }: { params: Pro
         </>
       } />
       {conversation.escalationReason && <Alert tone="info">Human follow-up: {conversation.escalationReason}</Alert>}
+      {readiness.providerDegraded && (
+        <Alert tone="info">
+          Meta&apos;s messaging service has been unavailable since {fmtDateTime(readiness.providerDegraded.since)}
+          {" "}({readiness.providerDegraded.failures} failed send attempts). Approved replies are queued and will be sent automatically — nothing is lost.
+        </Alert>
+      )}
 
       <section aria-label="Conversation messages" className="card space-y-3 p-4 sm:p-6">
         {conversation.messages.length === 0 ? <p className="text-sm text-zinc-600">No messages yet.</p> : conversation.messages.map((message) => {
           const isDraft = message.draftState === "DRAFT";
           const isSuperseded = message.draftState === "SUPERSEDED";
+          const isQueued = message.status === "QUEUED" && !isDraft && !isSuperseded;
           return (
             <article key={message.id}
-              className={`max-w-[90%] rounded-xl p-3 sm:max-w-[75%] ${message.direction === "INBOUND" ? "bg-zinc-100 text-zinc-900" : isDraft ? "ml-auto border border-dashed border-brand-300 bg-brand-50 text-zinc-900" : "ml-auto bg-brand-50 text-zinc-900"}`}>
+              className={`max-w-[90%] rounded-xl p-3 sm:max-w-[75%] ${message.direction === "INBOUND" ? "bg-zinc-100 text-zinc-900" : isDraft || isQueued ? "ml-auto border border-dashed border-brand-300 bg-brand-50 text-zinc-900" : "ml-auto bg-brand-50 text-zinc-900"}`}>
               <p className="mb-1 flex flex-wrap items-center gap-2 text-xs font-medium text-zinc-500">
                 {message.direction === "INBOUND"
                   ? (message.fromOwnerApp ? "Business app" : "Customer")
@@ -58,12 +66,22 @@ export default async function WhatsAppConversationPage({ params }: { params: Pro
                     ? <><span>AI draft · not sent</span><Chip tone={DRAFT_STATUS_TONE[message.resultStatus ?? ""] ?? "neutral"}>{(message.resultStatus ?? "draft").toLowerCase().replace(/_/g, " ")}</Chip></>
                     : isSuperseded
                       ? <span>Superseded draft · not sent</span>
-                      : <span>You</span>}
-                {!isDraft && !isSuperseded && <span>· {message.type} · {message.status.toLowerCase()}</span>}
+                      : isQueued
+                        ? <><span>Approved reply · waiting to send</span><Chip tone="warning">queued</Chip></>
+                        : <span>You</span>}
+                {!isDraft && !isSuperseded && <span>· {message.type}{!isQueued && <span> · {message.status.toLowerCase()}</span>}</span>}
               </p>
               <p className="whitespace-pre-wrap break-words text-sm">{message.text ?? `[${message.type} message]`}</p>
+              {isQueued && message.nextAttemptAt && (
+                <p className="mt-1 text-xs text-zinc-600">Next send attempt: {fmtDateTime(message.nextAttemptAt)}{message.attempts > 0 ? ` · ${message.attempts} attempt${message.attempts === 1 ? "" : "s"} so far` : ""}</p>
+              )}
               {message.errorInfo !== null && (typeof (message.errorInfo as { details?: unknown } | null)?.details === "string") && (
                 <p className="mt-1 text-xs text-red-700">Delivery failure: {(message.errorInfo as { details?: unknown }).details as string}</p>
+              )}
+              {isQueued && maySend && (
+                <div className="mt-2">
+                  <WhatsAppQueuedCancel businessId={businessId} conversationId={conversationId} messageId={message.id} queuedAt={fmtDateTime(message.queuedAt ?? message.createdAt)} />
+                </div>
               )}
               <time className="mt-2 block text-right text-[11px] text-zinc-500">{fmtDateTime(message.timestampSent ?? message.createdAt)}</time>
             </article>
@@ -77,6 +95,12 @@ export default async function WhatsAppConversationPage({ params }: { params: Pro
           <div><dt className="inline text-zinc-500">Customer service window: </dt><dd className="inline"><Chip tone={readiness.windowOpen ? "success" : "danger"}>{readiness.windowOpen ? "Open" : "Closed"}</Chip></dd></div>
           <div><dt className="inline text-zinc-500">Free service messages this month: </dt><dd className="inline">{readiness.meterFree} remaining ({readiness.meterUsed} used)</dd></div>
           {readiness.windowClosesAt && <div className="sm:col-span-2"><dt className="inline text-zinc-500">Window closes: </dt><dd className="inline">{fmtDateTime(readiness.windowClosesAt)}</dd></div>}
+          {readiness.queued && (
+            <div className="sm:col-span-2">
+              <dt className="inline text-zinc-500">Queued replies: </dt>
+              <dd className="inline">{readiness.queued.count} waiting — next send attempt {readiness.queued.nextRetryAt ? fmtDateTime(readiness.queued.nextRetryAt) : "as soon as the service recovers"}</dd>
+            </div>
+          )}
         </dl>
         {!readiness.windowOpen && <Alert tone="info">The 24-hour customer service window is closed. Wait for the customer to message again, or reply from the WhatsApp Business app.</Alert>}
         {readiness.meterFree === 0 && <Alert tone="info">The 1,000-message free service tier has been used this month. Meta may charge for additional messages; confirm billing before sending.</Alert>}
@@ -103,10 +127,15 @@ export default async function WhatsAppConversationPage({ params }: { params: Pro
                   )}
                 </Alert>
               )}
+              {readiness.queued && (
+                <Alert tone="info">
+                  {readiness.queued.count} approved {readiness.queued.count === 1 ? "reply is" : "replies are"} waiting to send above. Compose a new reply once it has sent, or cancel it from the queued message.
+                </Alert>
+              )}
               <WhatsAppReplyForm
                 businessId={businessId}
                 conversationId={conversationId}
-                enabled={readiness.windowOpen}
+                enabled={readiness.windowOpen && !readiness.queued}
                 draft={latestDraft ? { text: latestDraft.text ?? "", source: latestDraft.source, reason: latestDraft.reason, evidenceCount: asEvidence(latestDraft.evidence).length } : null}
               />
             </>

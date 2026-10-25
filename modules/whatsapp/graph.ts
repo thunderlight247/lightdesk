@@ -89,7 +89,45 @@ export async function checkWabaOwnsPhoneNumber(
   return { ok: true, value: { belongs: list.some((n) => n && n.id === params.phoneNumberId) } };
 }
 
-export type SendTextResult = { ok: true; wamid: string } | { ok: false; message: string };
+export type SendFailureKind = "TRANSIENT" | "TRANSIENT_ONCE" | "PERMANENT";
+
+export type SendTextResult =
+  | { ok: true; wamid: string }
+  | {
+      ok: false;
+      /** Safe, generic message — never a provider response body, key or prompt. */
+      message: string;
+      /** ADR 0010: TRANSIENT failures may be queued and retried; TRANSIENT_ONCE gets a single retry; PERMANENT never. */
+      retryable: boolean;
+      kind: SendFailureKind;
+      /** From a 429 retry-after header when Meta provides one. */
+      retryAfterMs: number | null;
+    };
+
+/**
+ * Pure failure classification for the send path (ADR 0010 §3). Permanent failures are things a
+ * retry can never fix (bad token, invalid recipient, rejected parameters). "Accepted but no
+ * message id" and unreadable bodies are treated as PERMANENT on purpose: retrying an ambiguous
+ * send can double-message a customer. Network errors and 5xx are the outage classes that queue.
+ */
+export function classifySendFailure(
+  status: number | null,
+  errCode: string | null,
+  retryAfterMs: number | null,
+): { kind: SendFailureKind; retryable: boolean; retryAfterMs: number | null } {
+  if (status === 429 || errCode === "131056" || errCode === "RATE_LIMIT") {
+    return { kind: "TRANSIENT", retryable: true, retryAfterMs };
+  }
+  if (status !== null && (status === 401 || status === 403 || status === 404 || (status >= 400 && status < 500))) {
+    return { kind: "PERMANENT", retryable: false, retryAfterMs: null };
+  }
+  if (status !== null && status >= 500) {
+    return { kind: "TRANSIENT", retryable: true, retryAfterMs };
+  }
+  // Unknown/unclassified status (or request fully unreadable): one safe retry, then fail.
+  return { kind: "TRANSIENT_ONCE", retryable: true, retryAfterMs };
+}
+
 
 /**
  * Sends one free-form text message: POST /{version}/{phoneNumberId}/messages with
@@ -116,6 +154,17 @@ export async function sendWhatsAppText(
     text: { body: params.text },
   };
   if (params.replyToWamid) payload.context = { message_id: params.replyToWamid };
+  const fail = (status: number | null, message: string, errCode: string | null = null): SendTextResult => {
+    let retryAfterMs: number | null = null;
+    // Only usable on real responses; network failures have none.
+    if (status !== null) {
+      const raw = res.headers.get("retry-after") ?? null;
+      const parsed = raw === null ? Number.NaN : Number(raw);
+      if (Number.isFinite(parsed) && parsed >= 0) retryAfterMs = Math.trunc(parsed * 1000);
+    }
+    const c = classifySendFailure(status, errCode, retryAfterMs);
+    return { ok: false as const, message, ...c };
+  };
   let res: Response;
   try {
     res = await fetchFn(
@@ -127,21 +176,25 @@ export async function sendWhatsAppText(
       },
     );
   } catch {
-    return { ok: false, message: "The Graph API could not be reached from this server." };
+    // Network failure/timeout: a real outage — fully transient (not the 1-attempt class).
+    return { ok: false, message: "The Graph API could not be reached from this server.", retryable: true, kind: "TRANSIENT", retryAfterMs: null };
   }
   let body: unknown;
   try {
     body = await res.json();
   } catch {
-    return { ok: false, message: "The Graph API returned an unreadable response." };
+    return fail(res.status, "The Graph API returned an unreadable response.");
   }
   if (!res.ok || (body as { error?: unknown }).error) {
-    const err = (body as { error?: { message?: string; type?: string } }).error;
-    return { ok: false, message: err?.message ?? `Graph API send failed (HTTP ${res.status}).` };
+    const err = (body as { error?: { message?: string; type?: string; code?: unknown } }).error;
+    const errCode = typeof err?.code === "number" ? String(err.code) : null;
+    return fail(res.status, err?.message ?? `Graph API send failed (HTTP ${res.status}).`, errCode);
   }
   const wamid = (body as { messages?: { id?: string }[] }).messages?.[0]?.id;
   if (typeof wamid !== "string" || !wamid) {
-    return { ok: false, message: "The Graph API accepted the send but did not return a message id." };
+    // 2xx without a message id: the send MIGHT have gone through. Retrying risks double-messaging
+    // a customer, so this is deliberately PERMANENT (never queued; ADR 0010 §3).
+    return { ok: false, message: "The Graph API accepted the send but did not return a message id.", retryable: false, kind: "PERMANENT", retryAfterMs: null };
   }
   return { ok: true, wamid };
 }

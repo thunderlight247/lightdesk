@@ -91,3 +91,19 @@ lines; for a REAL number the two-step verification code must be entered in the d
 before webhooks/messages work reliably. Re-run
 `tsx --env-file=.env scripts/whatsapp-verify.ts` after any connection change to confirm the
 token and number without sending anything.
+
+## 7. Wire the outbox-flush cron (ADR 0010, at deploy time)
+
+Approved replies that hit a Meta outage queue locally and are drained by console traffic.
+For silent periods, wire an external Cron Trigger (Cloudflare Cron Trigger, GitHub Actions
+or any uptime pinger) to call the drain endpoint every 5–10 minutes:
+
+1. Generate a secret (32+ chars) and put it in the deploy environment as
+   `WHATSAPP_OUTBOX_FLUSH_TOKEN` (unset = the endpoint is fail-closed disabled).
+2. Schedule `POST /api/whatsapp/outbox/flush` on that host with
+   `Authorization: Bearer <token>` and JSON body `{ "businessId": "<businessId>" }`; it
+   drains that business's due queued replies (200) and reports `{ found, sent,
+   failedTerminal, held, leftDue, breakerOpen }`.
+3. If the response reports `breakerOpen: true`, Meta is unreachable — the queue holds and
+   retries; nothing needs manual intervention unless the outage outlasts the queue rows'
+   24-hour service window.

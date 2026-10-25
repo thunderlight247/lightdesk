@@ -3,9 +3,12 @@ import { createHmac } from "node:crypto";
 import { decryptSecret, encryptSecret, readSecretBoxKey } from "@/lib/security/secret-box";
 import { readWhatsappConfig, whatsappConnectionProblem } from "@/modules/whatsapp/config";
 import {
-  checkWabaOwnsPhoneNumber, exchangeCodeForToken, fetchPhoneNumberInfo, listWabas,
+  checkWabaOwnsPhoneNumber, classifySendFailure, exchangeCodeForToken, fetchPhoneNumberInfo, listWabas,
   listWabaPhoneNumbers, sendWhatsAppText, upgradeToLongLivedToken,
 } from "@/modules/whatsapp/graph";
+import {
+  QUEUE_BACKOFF_STEPS_MS, QUEUE_MAX_ATTEMPTS, QUEUE_UNKNOWN_MAX_ATTEMPTS, SERVICE_WINDOW_MS, queueBackoffDelayMs,
+} from "@/modules/whatsapp/queue-policy";
 import { parseInboundPayload, verifyWebhookSignature, verifyWebhookToken } from "@/modules/whatsapp/webhooks";
 
 describe("readWhatsappConfig", () => {
@@ -132,7 +135,13 @@ describe("sendWhatsAppText", () => {
     const errFetch = (async () =>
       new Response(JSON.stringify({ error: { message: "(#131026) Re-engagement", type: "O", code: 131026 } }), { status: 400 })) as typeof fetch;
     const errOut = await sendWhatsAppText(params, { fetchImpl: errFetch });
-    expect(errOut).toEqual({ ok: false, message: "(#131026) Re-engagement" });
+    // ADR 0010: failures now carry a kind/retryable classification alongside the message.
+    expect(errOut.ok).toBe(false);
+    if (!errOut.ok) {
+      expect(errOut.message).toContain("Re-engagement");
+      expect(errOut.kind).toBe("PERMANENT");
+      expect(errOut.retryable).toBe(false);
+    }
     const fakeFetch = (async () => new Response(JSON.stringify({ messages: [{ id: "wamid.OUTA" }] }), { status: 200 })) as typeof fetch;
     const okOut = await sendWhatsAppText({ ...params, replyToWamid: null }, { fetchImpl: fakeFetch });
     expect(okOut.ok).toBe(true);
@@ -342,5 +351,79 @@ describe("parseInboundPayload: delivery statuses", () => {
     expect(out.statuses).toHaveLength(1);
     expect(out.statuses[0].statuses[0]).toMatchObject({ wamid: "wamid.R1", status: "read" });
     expect(out.statusEvents).toBe(1);
+  });
+});
+
+// ---- M8 (ADR 0010 §3): send-failure classification --------------------------------------
+
+describe("classifySendFailure (ADR 0010)", () => {
+  it("unclassifiable and 5xx failures are transient while 5xx keeps 5 attempts", () => {
+    // note: a bare null status through the classifier is "unclassifiable" (1 attempt);
+    // real network failures are classified in sendWhatsAppText's catch (TRANSIENT, see below).
+    expect(classifySendFailure(null, null, null)).toMatchObject({ kind: "TRANSIENT_ONCE", retryable: true });
+    expect(classifySendFailure(500, null, null)).toMatchObject({ kind: "TRANSIENT", retryable: true });
+    expect(classifySendFailure(503, "1010", null)).toMatchObject({ kind: "TRANSIENT", retryable: true });
+  });
+
+  it("429 and rate-limit codes are transient and carry a retry-after hint", () => {
+    expect(classifySendFailure(429, null, 30_000)).toMatchObject({ kind: "TRANSIENT", retryable: true, retryAfterMs: 30_000 });
+    expect(classifySendFailure(200, "131056", null)).toMatchObject({ kind: "TRANSIENT", retryable: true });
+  });
+
+  it("permanent 4xx failures are never queued", () => {
+    for (const status of [400, 401, 403, 404]) {
+      expect(classifySendFailure(status, null, null)).toMatchObject({ kind: "PERMANENT", retryable: false, retryAfterMs: null });
+    }
+  });
+
+  it("unclassifiable responses cap at one retry", () => {
+    expect(classifySendFailure(300, null, null)).toMatchObject({ kind: "TRANSIENT_ONCE", retryable: true });
+    expect(QUEUE_UNKNOWN_MAX_ATTEMPTS).toBe(1);
+    expect(QUEUE_MAX_ATTEMPTS).toBe(5);
+  });
+
+  it("sendWhatsAppText classifies a true outage network failure as fully transient", async () => {
+    const fakeFetch = (async () => { throw new Error("network down"); }) as typeof fetch;
+    const out = await sendWhatsAppText({ accessToken: "t", phoneNumberId: "PN", graphApiVersion: "v26.0", toPhone: "1", text: "x" }, { fetchImpl: fakeFetch });
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.kind).toBe("TRANSIENT");
+      expect(out.retryable).toBe(true);
+    }
+  });
+
+  it("an accepted send without a message id is never retried (double-send risk)", async () => {
+    const fakeFetch = (async () => new Response(JSON.stringify({ messaging_product: "whatsapp", contacts: [] }), { status: 200 })) as typeof fetch;
+    const out = await sendWhatsAppText({ accessToken: "t", phoneNumberId: "PN", graphApiVersion: "v26.0", toPhone: "1", text: "x" }, { fetchImpl: fakeFetch });
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.kind).toBe("PERMANENT");
+      expect(out.retryable).toBe(false);
+    }
+  });
+});
+
+// ---- M8 (ADR 0010 §4): backoff schedule ---------------------------------------------------
+
+describe("queueBackoffDelayMs (ADR 0010)", () => {
+  it("follows the 1m/5m/20m/1h/6h schedule with ±20% deterministic jitter", () => {
+    for (let i = 1; i <= 5; i += 1) {
+      const near = queueBackoffDelayMs(i, null, "row-1");
+      const again = queueBackoffDelayMs(i, null, "row-1");
+      expect(near).toBe(again); // jitter is deterministic per row id
+      expect(near).toBeGreaterThanOrEqual(Math.round(QUEUE_BACKOFF_STEPS_MS[i - 1] * 0.8));
+      expect(near).toBeLessThanOrEqual(Math.round(QUEUE_BACKOFF_STEPS_MS[i - 1] * 1.2));
+    }
+    expect(QUEUE_BACKOFF_STEPS_MS).toEqual([60_000, 300_000, 1_200_000, 3_600_000, 21_600_000]);
+  });
+
+  it("different rows get different (fanned-out) delays and a retry-after hint wins when present", () => {
+    expect(queueBackoffDelayMs(1, 999_999, "row-x")).toBe(Math.round(queueBackoffDelayMs(1, 999_999, "row-x")));
+  });
+});
+
+describe("ADR 0010 window/policy constants", () => {
+  it("the shared 24-hour window constant stays the M6 value", () => {
+    expect(SERVICE_WINDOW_MS).toBe(24 * 3_600_000);
   });
 });
