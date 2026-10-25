@@ -157,6 +157,13 @@ columns (migration SQL will add the enum value first). The `integrity_constraint
 table CHECK constraints will be re-checked and updated if they enumerate statuses.
 
 ## 9. Test matrix (planned, integration + unit)
+
+**Coverage note (2026-10-25):** the trace-through of this matrix found every row covered except
+two, now closed in `tests/integration/whatsapp-outbox.test.ts`: (a) the §5 Trigger-1
+inbound-webhook opportunistic flush, proven end-to-end — a signed webhook storing the
+customer's next message drains a due queued row to `SENT` with a `wamid` — and (b) the cron
+global cap, proven with 55 due rows (50 drained, 5 correctly left queued for the next pass).
+19 of this file's outbox tests now pass against the full matrix.
 - classification: 5xx/timeout/429 queue; 401/403/400 fail inline without a row;
 - queue → opportunistic flush on next inbound → SENT with wamid, meter +1, audits present;
 - backoff ordering + jitter bounds; 5-attempt exhaustion → FAILED/EXHAUSTED_RETRIES;

@@ -9,7 +9,9 @@ import {
   setConversationMode,
 } from "@/modules/whatsapp/service";
 import { flushDueMessages } from "@/modules/whatsapp/outbox";
+import { createHmac } from "node:crypto";
 import { POST as flushRoute } from "@/app/api/whatsapp/outbox/flush/route";
+import { POST as webhookPost } from "@/app/api/whatsapp/webhook/route";
 import { encryptSecret } from "@/lib/security/secret-box";
 
 const KEY = Buffer.alloc(32, 9);
@@ -18,6 +20,7 @@ const FLUSH_TOKEN = "f".repeat(64);
 const envSaves = {
   key: process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY,
   token: process.env.WHATSAPP_OUTBOX_FLUSH_TOKEN,
+  appSecret: process.env.WHATSAPP_APP_SECRET,
 };
 beforeAll(async () => {
   process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY = KEY_HEX;
@@ -29,6 +32,8 @@ afterAll(() => {
   else process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY = envSaves.key;
   if (envSaves.token === undefined) delete process.env.WHATSAPP_OUTBOX_FLUSH_TOKEN;
   else process.env.WHATSAPP_OUTBOX_FLUSH_TOKEN = envSaves.token;
+  if (envSaves.appSecret === undefined) delete process.env.WHATSAPP_APP_SECRET;
+  else process.env.WHATSAPP_APP_SECRET = envSaves.appSecret;
 });
 afterEach(async () => {
   await resetDb();
@@ -334,5 +339,80 @@ describe("POST /api/whatsapp/outbox/flush (cron endpoint)", () => {
 
   it("rejects an invalid businessId payload", async () => {
     await expect(flushPost(`Bearer ${FLUSH_TOKEN}`, { businessId: "" })).rejects.toMatchObject({ code: "VALIDATION" });
+  });
+
+  it("respects the global 50-send cap: 55 due rows → 50 drained, 5 left queued", async () => {
+    const ctx = await seed();
+    for (let i = 0; i < 55; i += 1) {
+      await seedQueued(ctx, { dueInMs: -1_000 - i, text: `outage reply #${i + 1}` });
+    }
+    const globalFetch = globalThis.fetch;
+    globalThis.fetch = okFetch as typeof fetch;
+    try {
+      const res = await flushPost(`Bearer ${FLUSH_TOKEN}`, { businessId: ctx.bizA.id });
+      expect(res.status).toBe(200);
+      // The pass takes exactly the cap: 50 of the 55 due rows enter the pass.
+      expect(await res.json()).toMatchObject({ found: 50, sent: 50, failedTerminal: 0, held: 0 });
+    } finally {
+      globalThis.fetch = globalFetch;
+    }
+    expect(await prisma.whatsAppMessage.count({ where: { status: "SENT", wamid: { startsWith: "wamid.FLUSH" } } })).toBe(50);
+    expect(await prisma.whatsAppMessage.count({ where: { conversationId: ctx.conv.id, status: "QUEUED" } })).toBe(5);
+    // The remainder stays correctly due for the next pass (cron or opportunistic).
+    const globalFetch2 = globalThis.fetch;
+    globalThis.fetch = okFetch as typeof fetch;
+    try {
+      const res2 = await flushPost(`Bearer ${FLUSH_TOKEN}`, { businessId: ctx.bizA.id });
+      expect(await res2.json()).toMatchObject({ found: 5, sent: 5 });
+    } finally {
+      globalThis.fetch = globalFetch2;
+    }
+    expect(await prisma.whatsAppMessage.count({ where: { conversationId: ctx.conv.id, status: "QUEUED" } })).toBe(0);
+  });
+});
+
+describe("inbound webhook triggers the opportunistic flush (ADR 0010 §5 Trigger 1)", () => {
+  const APP_SECRET = "outbox-webhook-app-secret";
+  const sign = (body: string) =>
+    `sha256=${createHmac("sha256", APP_SECRET).update(body, "utf8").digest("hex")}`;
+
+  it("the customer's next message drains a due queued reply to SENT with a wamid", async () => {
+    const ctx = await seed();
+    const queued = await seedQueued(ctx, { dueInMs: -1_000 });
+    process.env.WHATSAPP_APP_SECRET = APP_SECRET;
+    const body = JSON.stringify({
+      entry: [{
+        id: ctx.connection.wabaId,
+        changes: [{ field: "messages", value: {
+          metadata: { phone_number_id: ctx.connection.phoneNumberId },
+          contacts: [{ profile: { name: ctx.conv.customerName ?? "Ama" } }],
+          messages: [{ id: "wamid.NEWIN-flush", from: ctx.conv.customerPhone, type: "text", text: { body: "Anything new on my order?" }, timestamp: String(Math.floor(Date.now() / 1000)) }],
+        } }],
+      }],
+    });
+    const request = new Request("http://localhost:3000/api/whatsapp/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-hub-signature-256": sign(body) },
+      body,
+    });
+    // flushDueMessages on the inbound path has no injectable fetch: stub the global one so the
+    // (fresh) inbound message's opportunistic flush reaches the fake Graph endpoint.
+    const globalFetch = globalThis.fetch;
+    globalThis.fetch = okFetch as typeof fetch;
+    try {
+      const res = await webhookPost(request);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ received: 1, unknown: 0, statusUpdated: 0 });
+    } finally {
+      globalThis.fetch = globalFetch;
+    }
+    // The stored inbound + the queue both moved exactly as ADR 0010 requires.
+    expect(await prisma.whatsAppMessage.count({ where: { conversationId: ctx.conv.id, direction: "INBOUND", wamid: "wamid.NEWIN-flush" } })).toBe(1);
+    const after = await prisma.whatsAppMessage.findUniqueOrThrow({ where: { id: queued.id } });
+    expect(after.status).toBe("SENT");
+    expect(after.wamid).toContain("wamid.FLUSH");
+    expect(await prisma.whatsAppMessage.count({ where: { conversationId: ctx.conv.id, status: "QUEUED" } })).toBe(0);
+    // The flushed row is audited as a real send, and the inbound webhook as received.
+    expect(await prisma.auditEvent.count({ where: { action: "whatsapp.message.sent", targetId: queued.id } })).toBe(1);
   });
 });
