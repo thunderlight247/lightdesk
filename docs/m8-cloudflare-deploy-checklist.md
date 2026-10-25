@@ -118,6 +118,26 @@ Each row needs **dated evidence** appended before the pilot is called hosted:
   never activated, executes a real `wrangler rollback`, verifies `GET /api/health` still returns 200,
   and prints an evidence block for the checklist. Safe to re-run any time; it aborts cleanly (`exit 3`)
   while no deployment exists yet.
+
+### 5.1 Incident surfaces the product shows by default (what "working as intended" looks like)
+
+Incident response is partly "do you recognise the symptom in front of you?". These are the exact
+states the product renders during provider or credential incidents, with where each comes from and
+what the operator must NOT do about it:
+
+| Surface | Where / default | Operator meaning |
+|---|---|---|
+| **Outage banner** — "Meta's messaging service has been unavailable since {time}. {n} approved replies are queued and will be sent automatically. Nothing is lost." | Owner WhatsApp inbox and conversation page (`providerDegraded { since, failures }`; ADR 0010 §6). Breaker **opens at ≥ 3 consecutive** transient Graph failures, audited once as `whatsapp.provider.outage.open`. | Provider side, not ours. **Do nothing manual** — the queue unaffected rows keep draining via the cron endpoint and opportunistic flush; check `POST /api/whatsapp/outbox/flush` responses for `breakerOpen` only to confirm, never to "unstick" anything. |
+| **Queued banner** — "Your approved reply is queued — next send attempt at {nextAttemptAt}" | Per conversation (healthy backoff state), with a Cancel affordance. The send button stays disabled while an earlier queued reply exists for that conversation. | Normal behaviour under backoff. Cancelling is a deliberate owner choice, not incident response. |
+| **Pilot-held banner** — "waiting — pilot paused" | A queued row stays `QUEUED` when a pilot gate holds (paused enrollment). | Business decision needed (resume enrollment), not an outage. |
+| **Expired banner** — "The 24-hour service window closed before the queued reply could be sent. The customer needs to message again next time." | Terminal `FAILED` rows with `errorInfo.code = EXPIRED_WINDOW` in the last 7 days, audited as `whatsapp.send.expired`. | Data-equivalent loss avoided by design; outbound expiry is a Meta service-window rule. Tell the operator to expect the customer's next message to re-open the 24-hour window. |
+| **Exhausted banner** — "Outbound retry exhausted" | Terminal `FAILED` rows with `errorInfo.code = EXHAUSTED_RETRIES` (5 transient attempts, per ADR 0010 §5). | Owner resend is the recovery; check the breaker first (if still open, resending immediately pushes into the outage again). |
+| **Login throttle banner** — "Too many failed sign-in attempts. Please wait a few minutes and try again." (`LOGIN_THROTTLE_MESSAGE`, one generic message for both exceeded budgets) | Sign-in form when the ip or per-email budget trips (M8 Phase 3). Defaults: **10 / ip**, **5 / email**, **10-minute** rolling window, tunable via `LOGIN_MAX_FAILURES_PER_IP` / `LOGIN_MAX_FAILURES_PER_EMAIL` / `LOGIN_FAILURE_WINDOW_MINUTES` — audit action `auth.login.throttled` with the bucket reason only. | Expected at default budgets during repeated failures (including a burst from one shared ip — shared NAT offices can trip the ip budget even with one user). A *successful* login clears that email's history; the ip history always just ages out. Never widen the budgets mid-incident to "let someone in" — wait out the window. |
+| **AI degrade to rules** — deterministic statuses (`needs_information`, `conflict_detected`, `escalation_required`) with the holding reply "I don't have confirmed information about that yet. Let me check with the business owner." | Lab/WhatsApp drafts when the AI provider is misconfigured, rate-limited, unreachable or returned invalid output. No unhandled exceptions. | Full human takeover is the correct incident posture; drafts are safely worse, never wrongly confident. |
+
+Alert/observability anchors for these states: `wrangler tail` on `whatsapp.provider.outage.open/closed`
+audits (once per transition) and the cron endpoint's auth failures (§4 "Logs/alerts" row);
+`GET /api/health/ready` catches configuration/key incidents before they reach the banners.
 - If Meta credentials or the encryption key are suspected compromised: rotating
   `WHATSAPP_TOKEN_ENCRYPTION_KEY` is a **key rotation runbook moment** (existing ciphertext rows
   need re-encryption before the old key is destroyed — read `lib/security/secret-box.ts`
