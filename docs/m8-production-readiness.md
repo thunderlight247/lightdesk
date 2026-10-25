@@ -65,16 +65,16 @@
 
 | Phase | Description | Deliverables |
 |---|---|---|
-| **Phase 1** | Privacy & Data Management | Owner export module, account closure / business deletion workflow, unit & integration tests. |
-| **Phase 2** | Production Health & Resilience | `/api/health/ready` deep checks, provider timeout handling & circuit breakers. |
-| **Phase 3** | Rate Limiting & Edge Hardening | Login attempt rate-limiting, edge headers, audit logging review. |
-| **Phase 4** | Hosting & Framework Modernization | Cloudflare deployment with managed PostgreSQL, Next.js upgrade evaluation. |
+| **Phase 1** | Privacy & Data Management | Owner export module, account closure / business deletion workflow, unit & integration tests. **Complete** (`modules/privacy/export.ts`, `modules/privacy/deletion.ts`). |
+| **Phase 2** | Production Health & Resilience | `/api/health/ready` deep checks **implemented and tested**; Gemini degradation verified (rules-based fallback with no unhandled exceptions); WhatsApp outbound outage queue + circuit breaker **complete** (ADR 0010: `QUEUED` status with backoff/expiry on `WhatsAppMessage`, `flushDueMessages` triggered by console reads + `POST /api/whatsapp/outbox/flush` cron endpoint guarded by `WHATSAPP_OUTBOX_FLUSH_TOKEN`, connection-level `providerDownSince`/`consecutiveSendFailures` breaker, outage/queued/expired banners in the owner console). |
+| **Phase 3** | Rate Limiting & Edge Hardening | **Complete.** Per-IP + per-email login throttling (`modules/identity/throttle.ts`, `lib/security/login-throttle.ts`, `LoginFailure` table via additive migration `20261024000000_m8_login_throttle`), CSP and prod-only HSTS in `next.config.ts`. |
+| **Phase 4** | Hosting & Framework Modernization | Cloudflare deployment with managed PostgreSQL (**pending owner inputs** — Cloudflare token, staging URL, Neon project; the full step-by-step is in `docs/m8-cloudflare-deploy-checklist.md` — OpenNext adapter build re-verified 2026-10-25, hosted-DB = Neon via Hyperdrive per accepted `docs/decisions/0011-hosted-postgres-for-cloudflare.md`, remote acceptance checks listed); Next.js 16 upgrade **evaluated** — see `docs/decisions/0009-nextjs-16-upgrade-evaluation.md`. |
 
 ---
 
 ## 4. Acceptance Criteria
-- [ ] Business owner can initiate and download a complete export of their business data.
-- [ ] Business owner can completely delete their workspace with clean tenant purging.
-- [ ] Deep health check route validates system readiness without exposing sensitive internals.
-- [ ] Provider timeouts degrade gracefully to rules-based fallback without unhandled exceptions.
-- [ ] Quality gates (typecheck, lint, unit & integration tests, production build) remain fully green.
+- [x] Business owner can initiate and download a complete export of their business data.
+- [x] Business owner can completely delete their workspace with clean tenant purging.
+- [x] Deep health check route validates system readiness without exposing sensitive internals.
+- [x] Provider timeouts degrade gracefully to rules-based fallback without unhandled exceptions (Gemini path; WhatsApp approved replies queue locally and retry up to the 24-hour window with console banners, per ADR 0010).
+- [x] Quality gates (typecheck, lint, unit & integration tests, production build) remain fully green.

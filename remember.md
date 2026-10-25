@@ -6,8 +6,7 @@
 >
 > **Repository:** `/media/light/Grace/lightdesk`
 >
-> **Document status:** Living source of project context. Update the
-> implementation status and decision log as work progresses. When this
+> **Document status:** Living source of project context. Product direction as of 2026-10-25: service businesses/professionals; LightDesk complements WhatsApp rather than replacing it. Update implementation status and decision log as work progresses. When this
 > document conflicts with the actual repository, migrations, tests, or a
 > newer explicit owner decision, inspect the evidence and follow the
 > newest confirmed decision. Do not invent completion status.
@@ -16,25 +15,44 @@
 
 ## 1. Project summary
 
-**LightDesk** is an AI-powered conversation assistant for small
-retailers and product-selling businesses, initially targeting businesses
-in Ghana.
+**LightDesk** is an AI-assisted client relationship and workflow management platform for service businesses and professionals, initially targeting businesses in Ghana. The first pilot audience is a small mixed group of service businesses, potentially including consultants and small agencies, repair/maintenance providers, and other client-facing service operators.
 
-Its purpose is to help businesses handle customer enquiries, answer
-repeated questions using approved business information, retain relevant
-conversation context, identify enquiries needing human attention, and
-eventually improve enquiry conversion.
+LightDesk is built **on top of WhatsApp, not as a replacement for WhatsApp**. Customers continue using their normal WhatsApp app to contact the business. LightDesk connects through Meta's official WhatsApp Business Platform / Cloud API where supported, and gives the business operator a private workspace for client context, follow-ups, workflow, approved business knowledge, and AI assistance. WhatsApp remains the communication channel; LightDesk is the operational intelligence and workflow layer around the conversations.
 
-LightDesk is not intended to be an AI that freely makes business
-decisions. It should be a dependable assistant that understands how a
-business operates, uses verified business facts, follows its policies,
-and knows when it does not know enough to answer.
+LightDesk should not try to recreate WhatsApp Business's existing basic features—such as labels, greeting/away messages, quick replies, and basic contact/chat management—as standalone reasons to use a second product. It should integrate with and complement existing tools where appropriate, and focus on work that otherwise gets lost across conversations: commitments, pending client requests, proposals/quotations, appointments, next actions, and unresolved issues.
+
+LightDesk helps businesses capture and understand client enquiries, maintain client and interaction history, identify unanswered questions, track commitments and follow-ups, and decide what needs attention next. The shared workflow should work across different service businesses, while each workspace configures its own services, approved pricing/rules, required enquiry details, appointments or job practices, and escalation policies.
+
+LightDesk is not intended to be an AI that freely makes business decisions. It should be a dependable assistant that understands how a business operates, uses verified business facts, follows its policies, distinguishes suggestions from verified facts, and knows when it does not know enough to answer.
 
 ### Core product promise
 
-> Help small businesses respond to customer enquiries more consistently
-> and efficiently, without inventing facts or taking control away from
-> the business owner.
+> Help service businesses manage client relationships and never lose sight of important enquiries, commitments, or follow-ups—while keeping WhatsApp as the customer communication channel and the business owner in control.
+
+### Current product hypothesis—not yet commercially validated
+
+Service professionals may value a shared workspace that turns conversations into client context, next actions, and follow-up tasks more than they value another basic messaging interface. The mixed-service pilot must validate this hypothesis with real owners. Do not claim market fit or willingness to pay before collecting evidence.
+
+### First-use workflow
+
+1. The business owner configures and approves the workspace's business profile, services, pricing/quotation rules, hours, communication preferences, procedures, and escalation rules.
+2. A customer enquiry arrives through the authorized WhatsApp integration and is associated with the correct business, conversation, and existing or new client record, subject to the data Meta actually provides.
+3. LightDesk prepares an AI summary, suggested category, relevant details, missing information, and possible next action.
+4. LightDesk recommends a next step: ask a clarifying question, arrange a consultation/appointment, prepare a proposal or quotation, escalate an issue, or schedule a follow-up.
+5. AI drafts a response using approved business information. The owner reviews, edits if needed, approves, and sends it.
+6. The owner confirms the client/request stage, records important commitments, and creates or confirms a task with an owner, due date, and status.
+7. A daily action view highlights overdue follow-ups, unanswered requests, upcoming appointments, pending proposals/quotations, and escalations.
+8. Conversation history, task changes, approvals, and authorized actions remain traceable.
+
+AI-extracted interpretations must remain separate from verified facts. Unknown or conflicting information must not be silently promoted into authoritative business/client data.
+
+### Shared capabilities versus configurable details
+
+**Shared core:** client records and interaction history; conversation summaries and AI-assisted replies; tasks/reminders; configurable enquiry-to-completion pipeline; daily action view; human approval, escalation, audit history, tenant isolation, and role-based access.
+
+**Per-business configuration:** services and service areas; approved prices and quotation rules; information required to qualify an enquiry; consultation, appointment, or job-handling practices; working hours, communication tone, and escalation policies.
+
+Do not create separate industry-specific application modules for the first pilot. Prove the shared workflow first; add specialization only when pilot evidence shows a genuine unmet need.
 
 ### Product philosophy
 
@@ -264,11 +282,7 @@ model rather than assume the provider will choose one.
 
 ### Model evaluation
 
-Before choosing defaults, compare providers on representative retail
-enquiries: - Correct use of approved facts - Handling of unknown prices,
-stock, and policies - Resistance to customer prompt injection -
-Structured output validity - Escalation quality - Latency - Actual token
-usage and cost - Rate limits and operational reliability
+Before choosing defaults, compare providers on representative service-business conversations: new enquiries, qualification, consultation/appointment requests, proposal or quotation follow-ups, missing client information, complaints, deadlines, and escalation. Retain retail cases only as regression coverage for existing behavior, not as the new primary target market. Evaluate correct use of approved facts, unknown/conflicting information, prompt-injection resistance, structured-output validity, escalation quality, latency, token usage/cost, rate limits, and reliability.
 
 Do not treat fluent language as proof of correctness.
 
@@ -488,18 +502,16 @@ claim a simulated message was sent externally
 
 ### M4 --- Real-User Feedback
 
-**Status:** Completed and documented (see `docs/m4-feedback.md`). Re-verified on 2026-10-20
-against the post-M5 code with the live Gemini provider: catalogue-grounded price/stock answers now
-work with evidence; the deterministic payment-claim pre-check has a regex gap (AI still escalated
-safely) — fix + regression test recommended before M7.
+**Status:** Completed for the earlier retail-oriented research scope and documented in `docs/m4-feedback.md`; it does **not** validate the newly selected service-business market. Existing test findings remain useful as regression evidence. Re-check any noted payment-claim regex gap against current code and latest reports before treating it as open or fixed.
 
-Key findings & activities:
-- Evaluated recurring enquiry archetypes for small retailers in Ghana (pricing/stock, delivery/location, MoMo payments, policies, and bargaining).
-- Ran empirical lab tests against the live Google Gemini API (`gemini-3.5-flash`); verified grounded drafts, safe holding replies on unknown data, and deterministic blocking of payment claims.
-- Validated unit economics: ~110–190 tokens per turn (< $0.05 / 1,000 turns) and 1.5s–2.2s latency.
-- Identified primary BIP bottleneck: lack of structured product pricing/inventory models causes ~50% of retail queries to hit holding replies.
-- Confirmed human-in-the-loop approval workflow provides high trust and saves 70–80% of typing time.
-- Prepared requirements for M5 (Data Management Hardening).
+Historical findings & activities (retail-oriented; not proof of service-business fit):
+- Evaluated recurring small-retailer enquiry archetypes in Ghana, including pricing/stock, delivery/location, Mobile Money payments, policies, and bargaining.
+- Ran empirical lab tests against the live Google Gemini API; recorded grounding, unknown-data handling, and payment-claim guard behavior in the M4 report.
+- Recorded historical latency/token estimates; remeasure current models and prices before using them for cost decisions.
+- Identified structured product pricing/inventory as a bottleneck for retail queries.
+- Recorded positive owner-approval feedback in the earlier research; do not generalize it to the service-business audience without a new pilot.
+
+New requirement: M4 evidence must be extended with a service-business validation round before making claims about the new target market. Observe how pilot candidates manage enquiries, client commitments, proposals/quotations, appointments, pending documents, and follow-ups. Measure baseline and post-use outcomes where practical.
 
 ### M5 --- Data Management Hardening
 
@@ -531,15 +543,22 @@ relying on this document for live pricing or eligibility.
 
 ### M7 --- Controlled Pilot
 
-Pilot with a limited number of real businesses.
+**Product focus:** run a small mixed-service pilot to validate the shared client-management workflow, not to replace WhatsApp or duplicate its basic business features.
 
-Requirements include: - Explicit owner consent and onboarding -
-Restricted functionality and automation - Human approval by default -
-Usage/spend limits - Human takeover controls - Monitoring and support
-procedures - Feedback collection - Incident and disconnect handling -
-Verification that customer-facing claims and responses remain grounded
+Historical implementation note: the 2026-10-21 change log reports that the M7 P0 pilot-control code was implemented and a test/build gate passed. That does not by itself mean a real mixed-service pilot has been recruited, consented, deployed, or completed. Verify the current repository, deployment state, owner consent, and latest test report before updating the status.
 
-Expand only when evidence supports it.
+Pilot workflow: incoming enquiry → client/conversation context → AI summary and missing information → suggested next action → owner-reviewed draft → owner-approved send → confirmed stage/commitment → dated follow-up task → daily action dashboard.
+
+Requirements include:
+- Explicit business-owner consent, onboarding, and a configured/approved business profile.
+- A small mixed group of service businesses; keep the same core workflow and configure service-specific details rather than creating separate industry modules.
+- Owner approval for outbound messages by default; no autonomous real-world actions during the initial pilot.
+- Immediate human takeover that pauses automation and blocks queued sends; resume only after explicit hand-back.
+- Per-business usage/spend limits, tenant isolation, auditability, monitoring, support, and incident/disconnect handling.
+- Feedback on captured enquiries, next-action usefulness, follow-up completion, AI-draft corrections, time saved, and willingness to continue.
+- Clear separation between verified facts and AI suggestions.
+
+Expand only when evidence supports it. Do not label the product-market fit or commercial value validated merely because the technical pilot controls exist.
 
 ### M8 --- Production Readiness and Launch
 
@@ -656,9 +675,24 @@ explain the evidence.
   Topic                   Decision / current      Status
                           direction               
   ----------------------- ----------------------- -----------------------
-  Target audience         Small retailers/product Agreed direction
-                          sellers, initially      
-                          Ghana                   
+  Target audience         Service businesses     Agreed direction
+                          and professionals in    (pilot hypothesis to
+                          Ghana; small mixed      validate with users)
+                          pilot group             
+
+  WhatsApp relationship   LightDesk is an         Core product decision
+                          operational layer on    confirmed by owner
+                          top of WhatsApp, not    
+                          a WhatsApp replacement; 
+                          customers continue to   
+                          use WhatsApp            
+
+  Product differentiation Avoid duplicating      Agreed direction
+                          basic WhatsApp Business 
+                          features; focus on      
+                          client context, tasks,  
+                          commitments, follow-up, 
+                          and action insights    
 
   Core source of truth    Structured Business     M2 design
                           Intelligence Profile    
@@ -739,7 +773,10 @@ Resolve them when they materially affect implementation.
 
 ### M4
 
--   What business-owner workflows create the most repetitive enquiries?
+-   Which client-management problems recur across the mixed service-business pilot group?
+-   What commitments are most often forgotten: callbacks, proposals, appointments, documents, or status updates?
+-   Does a shared client/action workflow save time beyond WhatsApp Business's existing labels and quick replies?
+-   Which metrics show a real improvement versus the business's baseline?
 -   Which replies are most valuable and most error-sensitive?
 -   What level of owner control is practical?
 -   What usage patterns and costs appear in real tests?
@@ -810,6 +847,7 @@ continue only with the next explicitly requested task.
 
 ## 15. Change log
 
+- **2026-10-25 (Product direction refined: service businesses; LightDesk sits on top of WhatsApp):** Owner selected a small mixed group of service businesses and professionals for the first pilot. Reframed LightDesk as an AI-assisted client relationship and workflow layer that complements WhatsApp rather than replacing it. Customers continue to use WhatsApp; LightDesk focuses on client context, conversation summaries, commitments, next actions, tasks/follow-ups, and an action dashboard. Basic WhatsApp Business features are not the product's primary differentiator. Added the shared enquiry-to-follow-up workflow, configurable service-specific details, and pilot validation measures. Historical M4 research was retail-oriented and must not be represented as validation of the new service-business target. Existing milestone statuses and technical claims remain evidence-bound and must be checked against the actual repository and latest reports.
 - **2026-10-21 (M7 P0 pilot controls implemented; Cloudflare evaluation phase 1 done):** Implemented the M7
   Controlled Pilot's code layer per the new spec `docs/m7-pilot.md` (owner decisions: ALL M7 gaps in code;
   Cloudflare is the hosting path to evaluate now). Additive migrations `20261021110233_m7_pilot_controls` +
