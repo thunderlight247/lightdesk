@@ -112,7 +112,12 @@ Each row needs **dated evidence** appended before the pilot is called hosted:
 ## 5. Rollback & incident
 
 - `wrangler versions list` + `wrangler rollback` — rehearse once, before the pilot (do not
-  wait for an incident to learn this).
+  wait for an incident to learn this). The drill is scripted: **`bash scripts/rehearse-rollback.sh`**
+  (run after any `wrangler deploy`, with `CLOUDFLARE_API_TOKEN` exported and `HEALTH_URL=<staging-url>`
+  set for the smoke check). It captures the live version id, uploads an inert tagged version that is
+  never activated, executes a real `wrangler rollback`, verifies `GET /api/health` still returns 200,
+  and prints an evidence block for the checklist. Safe to re-run any time; it aborts cleanly (`exit 3`)
+  while no deployment exists yet.
 - If Meta credentials or the encryption key are suspected compromised: rotating
   `WHATSAPP_TOKEN_ENCRYPTION_KEY` is a **key rotation runbook moment** (existing ciphertext rows
   need re-encryption before the old key is destroyed — read `lib/security/secret-box.ts`
