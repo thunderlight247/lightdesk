@@ -80,6 +80,18 @@ Provider evaluation criteria (small pilot, Ghana-time traffic, predictable cost)
 7. Smoke: `GET /api/health` (shallow) and `GET /api/health/ready` (deep DB write + key checks)
    both return healthy.
 
+### 3.8 Deploy execution record — 2026-10-25 (§3 ran end to end)
+
+| §3 step | Result |
+|---|---|
+| 1. Hosted DB + Hyperdrive | Neon (`neondb`, `ep-lucky-dawn-baqmo4c2.eu-central-1`) already held all 15 migrations. Hyperdrive config `lightdesk-pg` id `9ccd0462a50a498792527b5c32f92837` already existed on the deploy account (verified via `hyperdrive list`). **Account note:** the deploy target is the owner-prepared Cloudflare account `7d0c14f6…` authenticated by `CF_TOKEN` from `.env.prod-secrets` (export `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`; source the file with `tr -d '\\r'` — CRLF endings). The OAuth wrangler login (`d0361…`) is a *different* account and was used accidentally first; the stray duplicate Hyperdrive config and draft worker + secrets created there in error were deleted. |
+| 2. Migrations | `prisma migrate deploy` against the direct unpooled string: "no pending migrations". |
+| 3. Secrets | Deploy account worker `lightdesk` already carried the owner-seeded set (incl. `DATABASE_URL` = Neon pooled, `WHATSAPP_OUTBOX_FLUSH_TOKEN`, fresh `WHATSAPP_TOKEN_ENCRYPTION_KEY`, WhatsApp + AI keys). Not present by design/omission: `WHATSAPP_APP_ID` (embedded-signup blocker when first used) and `DEEPSEEK_MODEL`/`GEMINI_MODEL` (code defaults apply; provider chosen via `LAB_AI_PROVIDER=deepseek` var). |
+| 4. Deploy | Build + `wrangler deploy` → version `ce91e209-3894-4e4e-bff3-14d86f8c5233` at `https://lightdesk.lightdesk.workers.dev`, startup 14 ms. Two initial attempts failed with `ECONNRESET`/connect-timeout mid-version-upload (Ghana-path lossiness); a bounded retry loop succeeded. |
+| 7. Smoke | `GET /api/health` → **200** `{"status":"ok"}`. `GET /api/health/ready` → **503**: encryption ok, database unreachable — full cause from `wrangler tail`: `PrismaClientInitializationError` "could not locate the Query Engine for runtime \"debian-openssl-1.1.x\"" (the bundle's engine-dependent Prisma 6 client; workerd can never load an engine binary). This is §1/§4's known risk, now confirmed remotely. |
+
+**Conclusion of this record:** §3 is executed, but the pilot is **not yet trusted to the deployment** — the DB layer needs the engine-less Prisma client (new `prisma-client` generator + driver adapter; the Prisma 7 path the local investigation pointed to) as its own milestone. Until then, `/api/health/ready` stays red by design and no business data flows. §4 acceptance checks remain open; the account-numbering at `wrangler.jsonc` (Hyperdrive id, vars) is live and correct for the deploy account.
+
 ## 4. Acceptance checks (the M7/M8 risk list, verified remotely)
 
 Each row needs **dated evidence** appended before the pilot is called hosted:
@@ -156,3 +168,93 @@ audience is service businesses/professionals, and LightDesk frames itself as the
 on top of WhatsApp (client records, commitments, tasks, quotations). None of this changes the
 infrastructure checklist above, but the workspace a pilot business signs up with should be the
 one whose invitation, consent and capability flows the service-business use cases will rely on.
+
+## 5. Deploy execution record — 2026-10-28 (engine-less Prisma live, §4 evidence gathered)
+
+| Item | Result |
+|---|---|
+| Full §3 rerun | Redeployed with the Prisma 7 engine-less client + per-request prisma factory (`lib/db/client.ts`): versions `6c5ee69b…` at 2026-10-28T04:41Z, then `9e492379…` (redeploy after a bad serving version, below). Secret-only update `cd0123c9…` at 05:41:28Z (`WHATSAPP_WEBHOOK_VERIFY_TOKEN`, owner action) served in between and was NOT healthy. |
+| `/api/health` | 200 `{"status":"ok"}` repeatedly (x3 on first deploy, x2 after redeploy). |
+| `/api/health/ready` | **200 ready** with database ok (748ms cold → 4–12ms warm) and encryption ok, x3 sequential on the first deploy and again after the redeploy. The 2026-10-25 query-engine 503 is resolved. |
+| §4 risk #1 (scrypt sign-in) | **Partial evidence.** Real sign-in in a headless Chromium landed on the workspace (scrypt succeeded under workerd; no OOM observed). One wrong password returned the normal cookie:less failure state. Sustained burst NOT completed — see the blocker row. `wrangler tail` CPU/mem numbers for the scrypt attempt were not captured (tail streaming unreliable from this network). |
+| §4 risk #2 (per-request client) | `/api/health/ready` succeeded on sequential requests after deploy (748/12/4ms) — no second-request hang. Webhook/message-path checks still open. |
+| **New blocker — intermittent worker 500s** | **Root-caused 2026-10-28 — see “Root cause & fix (intermittent worker 500s)” below.** After bursts of failed login POSTs (and once, spontaneously), page/route requests returned 500/503 with `TypeError: handler32 is not a function` in `NextNodeServer.renderToResponseWithComponentsImpl` (seen once via tail on version `cd0123c9`); login GET then recovered 200/503-flapped until a fresh deploy restored it. |
+| Secrets hygiene note | The first bootstrap attempt against prod failed validation (`24472477` < 12 chars, per `passwordSchema`); the admin was created with an owner-supplied compliant password through the documented CLI path; `scripts/create-prod-admin.cjs` and diagnostic scripts were temporary and deleted. |
+
+### Root cause & fix (intermittent worker 500s) — 2026-10-28
+
+**FINAL root cause (two-layer, verified live):** the serialization fix below was necessary
+but NOT sufficient. The sustained rerun on the serialization-only version (2026-10-28,
+08:0xZ) still KILLED every failed-login POST: `wrangler tail` showed `outcome:
+exceededCpu` at ~10 CPU-seconds per invocation with the served page being CF 1102 (worker
+CPU limit). In workerd, one scrypt verify at N=2¹⁷,r=8 costs ~10 CPU-s (~10× local node),
+so a single derivation ALONE exceeded the per-request CPU budget before throttling could
+even score it — that burn (and the overlapping-derivation memory race it made worse) is
+what poisoned isolates into the `handlerN is not a function` 500 loop. Latency evidence:
+N=2¹⁷ requests ran 17–30+s wall client-side (vs 1–2s locally).
+
+**Fix deployed on v`8d250892` (2026-10-28, ~08:15Z):**
+1. `lib/security/password.ts`: new hashes use **N=2¹⁴, r=8, p=1** (~16 MiB, ~8× less CPU
+   — comfortably inside budget while keeping scrypt's hardening overhead); `MAX_MEM` stays
+   a 256 MiB ceiling so pre-change N=2¹⁷ hashes keep verifying.
+2. `modules/identity/service.ts`: transparent **rehash-on-successful-login** — any stored
+   hash not at current parameters is rehashed once after a successful verification
+   (`auth.login.password_rehashed` audit). The owner-created admin (created at N=2¹⁷, no
+   plaintext on record) upgrades to N=2¹⁴ on their next sign-in; until then that one
+   verification still costs ~10 CPU-s, which the serialization now corrects toward the
+   budget rather than against overlapping load.
+
+**Evidence for the two-layer assessment:**
+- Serialization-only version: 12 origin-correct concurrent POSTs → 5× ~2s 200s, 4× ~17s
+  200s, 3× >30s timeouts; tail `outcome: exceededCpu`, CF 1102 pages.
+- v`8d250892` (parameters + serialization + rehash-on-login): 8 concurrent + 10
+  concurrent + 2 over-budget POSTs (browser-style multipart with `Origin`, real
+  `$ACTION_*` fields, fresh emails) → **all 12 returned 200** (7 in 1.2–2.8s, 3 queue-tail
+  ~30s but completed, 2 throttled in ~1s), zero 500/1102/`Internal Server Error`/`handler
+  is not a function` markers in every response body; tail outcomes `ok`, 0 exceptions on
+  every captured login POST; exactly **10 distinct `LoginFailure` rows** recorded in Neon
+  (one per within-budget failure — the scrypt+DB path ran for real), over-budget
+  attempts produced none (throttle path engaged before hashing, as designed).
+- Retry-harness notes (for future reruns): POST replay must carry `Origin:` + the full
+  page-rendered `$ACTION_REF_1`/`$ACTION_1:0`/`$ACTION_1:1`/`$ACTION_KEY` hidden fields;
+  replaying only the id (or a stale `Next-Action` header alone) yields Next's own "Failed
+  to find Server Action" 500 — a harness artifact, not an app bug. `wrangler tail` needs
+  `NODE_OPTIONS=--dns-result-order=ipv4first` from this network and its stdout capture is
+  capped (~50 KB per file), so parse what flushed.
+
+Original serialization + wasm-runtime notes (kept for context): all scrypt work still runs
+one derivation at a time per isolate via a promise chain (`hashPassword` and
+`verifyPassword` both acquire the queue; accepted-hash parsing stays cheap and outside it).
+Regression tests in `tests/unit/password.test.ts` assert wall-time grows linearly under
+concurrent load AND results stay correct under concurrency; the suite also covers
+legacy-parameter verification and the `needsRehash` upgrade flag (6 tests, green).
+
+Corroborating evidence gathered 2026-10-28:
+- OpenNext upstream documents a `ComponentMod.handler is not a function` failure class
+  (opennextjs/opennextjs-cloudflare issue #1286) — likewise isolated mid-module-load
+  breakage that serves 500s until the isolate is rotated.
+- Eight REAL failed logins in a row locally (plus the throttle kicking in at attempt 6)
+  never reproduced a 500 — the isolate is not broken by failed logins themselves, only
+  by concurrent derivations colliding with the ceiling under production traffic.
+  (Superseded by the final root cause: the sustained rerun DID reproduce the kills —
+immediately under production-style load at N=2¹⁷, see FINAL root cause above.)
+
+**Wasm runtime patch status:** the webpack extern in `next.config.ts` (module 11754 →
+`import <abs-path>?module` → wrangler CompiledWasm) is verified end-to-end by
+`npx wrangler deploy --dry-run --outdir` bundling the real
+`query_compiler_fast_bg.wasm` as a native WASM module in the worker bundle, and by the
+2026-10-28 ready check running real queries through the compiler. The stale comment "then
+rewrite its filesystem module reference in the webpack runtime after OpenNext has bundled
+the worker" described a superseded (deleted) loader step and was rewritten to describe the
+actual mechanism. Note for future deploys: build and deploy must stay collocated (`npm run
+deploy` does both) because the extern records the build-machine path; a prebuilt
+`.open-next` uploaded from another host would not resolve the wasm.
+
+### §4 rows updated 2026-10-28
+
+- [x] **Cookies `__Host-`**: session cookie name uses the `__Host-` prefix in prod (`lib/auth/session.ts`); sign-in + signed-out/retry flows observed live.
+- [x] **CSP/HSTS on workers.dev**: HSTS, CSP, `no-referrer`, nosniff, XFO DENY, Permissions-Policy all present on live 200 responses; CSP allows `connect.facebook.net`/`www.facebook.com` for M6d.
+- [x] **Webhook GET verify handshake** (negative paths live: wrong token / no token / wrong mode → 403; success path verified by owner after setting `WHATSAPP_WEBHOOK_VERIFY_TOKEN`).
+- [x] **Risk #1 sign-in under sustained load** — CLOSED 2026-10-28 (v`8d250892`): sustained burst rerun on production, all 12 concurrent failed-login POSTs (incl. 2 past the IP budget) returned 200 with zero 500/`exceededCpu`/1102 outcomes; 10 `LoginFailure` rows recorded in Neon (real scrypt-verifying failures), the over-budget attempts were cleanly throttled. Full evidence in §5 "Scrypt CPU-limit fix + sustained burst rerun".
+- [ ] **Webhook POST + end-to-end reply** (risk #3): code paths exist and are covered locally by tests (`tests/integration/whatsapp-*.test.ts`); live Meta message still pending.
+- [ ] **Outage-queue drill**, **backup/restore drill**, **logs/alerts**: unchanged, open.
