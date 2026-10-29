@@ -14,17 +14,23 @@ export function AcceptInviteForm({ token, mode }: { token: string; mode: "join" 
       <input type="hidden" name="token" value={token} />
       {mode === "register" && (
         <>
-          <Field label="Your name" errors={state.fieldErrors?.name}>
-            <Input name="name" required maxLength={100} autoComplete="name" />
+          <Field label="Your full name" errors={state.fieldErrors?.name}>
+            <Input name="name" required maxLength={100} autoComplete="name" placeholder="e.g. Ama Mensah" />
           </Field>
-          <Field label="Choose a password (12+ characters)" errors={state.fieldErrors?.password}>
-            <Input name="password" type="password" required minLength={12} maxLength={128} autoComplete="new-password" />
+          <Field label="Create password (12+ characters)" errors={state.fieldErrors?.password}>
+            <Input name="password" type="password" required minLength={12} maxLength={128} autoComplete="new-password" placeholder="••••••••••••" />
           </Field>
         </>
       )}
-      <Button type="submit" disabled={pending}>
-        {mode === "register" ? "Create account & join" : "Join business"}
-      </Button>
+      <div className="pt-2">
+        <Button type="submit" disabled={pending} className="w-full" size="lg">
+          {pending
+            ? "Joining workspace…"
+            : mode === "register"
+            ? "Create account & join"
+            : "Join business workspace"}
+        </Button>
+      </div>
     </form>
   );
 }

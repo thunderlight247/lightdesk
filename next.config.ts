@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -28,6 +29,45 @@ const CSP = [
 
 const config: NextConfig = {
   poweredByHeader: false,
+  webpack(config, { isServer }) {
+    if (isServer) {
+      // Preserve Prisma's generated `?module` wasm import verbatim as a webpack
+      // external (`import <abs-path>?module`): the OpenNext build passes it through to
+      // wrangler, whose CompiledWasm collector turns it into a real WASM module import
+      // in the bundled worker (verified live: .next/server/... module 11754 →
+      // .open-next worker wasm binding, docs/m8-cloudflare-deploy-checklist.md §5).
+      // Called ~once per compiled route; idempotent.
+      config.experiments = { ...config.experiments, asyncWebAssembly: true };
+      config.module.rules.push({
+        test: /\.wasm$/,
+        resourceQuery: /module/i,
+        type: "webassembly/async",
+      });
+      // Externals: workerd has no usable `path` module through the OpenNext patch —
+      // keep it commonjs-per-request while preserving Next's existing externals.
+      config.externals = [
+        (
+          { context, request }: { context?: string; request?: string },
+          callback: (error?: Error | null, result?: string) => void,
+        ) => {
+          if (request && context && /\.wasm\?module$/.test(request)) {
+            // Point every route at the one source wasm, so wrangler bundles a real file.
+            const [file, query] = request.split("?");
+            const abs = path.resolve(context, file);
+            callback(null, `import ${abs}?${query}`);
+            return;
+          }
+          if (request === "path") {
+            callback(null, "commonjs path");
+            return;
+          }
+          callback();
+        },
+        ...(Array.isArray(config.externals) ? config.externals : [config.externals].filter(Boolean)),
+      ];
+    }
+    return config;
+  },
   async headers() {
     return [
       {

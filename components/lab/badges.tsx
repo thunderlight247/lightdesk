@@ -9,7 +9,8 @@ const RESULT: Record<DraftStatus, { label: string; tone: "success" | "warning" |
 };
 
 export function ResultBadge({ status }: { status: DraftStatus }) {
-  return <Chip tone={RESULT[status].tone}>{RESULT[status].label}</Chip>;
+  const r = RESULT[status];
+  return <Chip tone={r.tone} withDot>{r.label}</Chip>;
 }
 
 export function ConversationStatusBadge({ status }: { status: "ACTIVE" | "ESCALATED" | "RESOLVED" }) {
@@ -18,5 +19,6 @@ export function ConversationStatusBadge({ status }: { status: "ACTIVE" | "ESCALA
     ESCALATED: ["Needs human follow-up", "danger"],
     RESOLVED: ["Resolved", "success"],
   } as const;
-  return <Chip tone={map[status][1]}>{map[status][0]}</Chip>;
+  const [label, tone] = map[status];
+  return <Chip tone={tone} withDot>{label}</Chip>;
 }

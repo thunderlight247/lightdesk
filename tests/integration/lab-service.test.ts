@@ -312,7 +312,9 @@ describe("review, approval and context", () => {
     expect((await view(t, id)).messages.every((m) => m.sentToCustomer === false)).toBe(true);
     expect(SIMULATION_NOTICE).toMatch(/not sent to any customer/);
     // the schema has no delivery state at all
-    const cols = await prisma.$queryRaw<{ column_name: string }[]>`SELECT column_name FROM information_schema.columns WHERE table_name = 'LabMessage'`;
+    // NOTE: cast to ::text — the pg driver adapter (lib/db/client.ts) cannot deserialize
+    // Postgres' system-catalog `name` type; production code never selects catalog types.
+    const cols = await prisma.$queryRaw<{ column_name: string }[]>`SELECT column_name::text AS column_name FROM information_schema.columns WHERE table_name = 'LabMessage'`;
     expect(cols.map((c) => c.column_name).join(",")).not.toMatch(/sent|deliver/i);
   });
 });

@@ -1,17 +1,16 @@
 "use client";
 
 import { useActionState } from "react";
-import { Alert } from "@/components/ui/field";
+import { Alert, Chip, Input, Select } from "@/components/ui/field";
 import { Button, GhostButton } from "@/components/ui/button";
-import { Input } from "@/components/ui/field";
 import type { PilotOverviewRow } from "@/modules/pilot/service";
 import { enrollInPilotAction, setPilotStatusAction } from "@/app/(workspace)/admin/pilot/actions";
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING_CONSENT: "awaiting owner consent",
-  ACTIVE: "active",
-  PAUSED: "paused",
-  EXITED: "exited",
+  PENDING_CONSENT: "Awaiting owner consent",
+  ACTIVE: "Active",
+  PAUSED: "Paused",
+  EXITED: "Exited",
 };
 
 export function AdminPilotPanel({
@@ -30,67 +29,86 @@ export function AdminPilotPanel({
       {(enrollState.message || statusState.message) && <Alert tone="success">{enrollState.message ?? statusState.message}</Alert>}
 
       {candidates.length > 0 && (
-        <form action={enrollAction} className="card flex flex-wrap items-end gap-3 p-4">
-          <label className="text-sm">
-            <span className="mb-1 block font-medium text-zinc-800">Enroll a business</span>
-            <select name="businessId" className="rounded-md border border-zinc-300 px-3 py-2 text-sm" required>
+        <form action={enrollAction} className="card p-4 sm:p-5 flex flex-wrap items-end gap-3">
+          <label className="text-sm min-w-[200px]">
+            <span className="mb-1.5 block font-medium text-zinc-800">Enroll a business</span>
+            <Select name="businessId" required>
               {candidates.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className="min-w-0 flex-1 text-sm">
-            <span className="mb-1 block font-medium text-zinc-800">Note (optional)</span>
-            <Input name="note" maxLength={500} placeholder="why this business, who arranged it" />
+            <span className="mb-1.5 block font-medium text-zinc-800">Note (optional)</span>
+            <Input name="note" maxLength={500} placeholder="Why this business, onboarding context" />
           </label>
-          <Button disabled={enrollPending}>{enrollPending ? "Enrolling…" : "Enroll"}</Button>
+          <div>
+            <Button disabled={enrollPending}>{enrollPending ? "Enrolling…" : "Enroll business"}</Button>
+          </div>
         </form>
       )}
 
       {overview.rows.length === 0 ? (
-        <p className="text-sm text-zinc-500">No businesses enrolled yet.</p>
+        <div className="card border-dashed p-8 text-center text-sm text-zinc-500">
+          No businesses enrolled in the controlled pilot yet.
+        </div>
       ) : (
-        <ul className="divide-y rounded-lg border bg-white text-sm">
+        <ul className="card divide-y divide-zinc-100 overflow-hidden">
           {overview.rows.map((row) => (
-            <li key={row.businessId} className="space-y-2 p-4">
+            <li key={row.businessId} className="space-y-3 p-4 sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-medium text-zinc-900">{row.businessName}</span>
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                    row.status === "ACTIVE" ? "bg-emerald-50 text-emerald-800" : row.status === "EXITED" ? "bg-red-50 text-red-800" : "bg-amber-50 text-amber-900"
-                  }`}
+                <span className="font-semibold text-zinc-900 text-sm">{row.businessName}</span>
+                <Chip
+                  tone={
+                    row.status === "ACTIVE"
+                      ? "success"
+                      : row.status === "EXITED"
+                      ? "danger"
+                      : "warning"
+                  }
+                  withDot
                 >
                   {STATUS_LABEL[row.status]}
-                </span>
+                </Chip>
               </div>
-              <p className="text-xs text-zinc-500">
-                Consent: {row.consentAt ? row.consentAt.toISOString().slice(0, 16).replace("T", " ") + " UTC" : "not yet given"} ·
-                {" "}AI today: {row.usage.aiCallsToday}{row.caps ? ` / ${row.caps.aiCallsPerDay} cap` : " (no cap)"} ·
-                {" "}Outbound this month: {row.usage.outboundThisMonth}{row.caps ? ` / ${row.caps.outboundPerMonth} cap` : " (no cap)"} ·
-                {" "}Open: {row.usage.openConversations} · Escalated: {row.usage.escalated} · Failed sends: {row.usage.failedSends} ·
-                {" "}Feedback: {row.feedbackCount}
-              </p>
-              <div className="flex flex-wrap gap-2">
+
+              <div className="rounded-xl bg-zinc-50 p-3 text-xs text-zinc-600 border border-zinc-100 space-y-1">
+                <p>
+                  <strong className="text-zinc-800">Owner consent:</strong>{" "}
+                  {row.consentAt ? row.consentAt.toISOString().slice(0, 16).replace("T", " ") + " UTC" : "Not yet given"}
+                </p>
+                <p>
+                  <strong className="text-zinc-800">AI calls today:</strong> {row.usage.aiCallsToday}
+                  {row.caps ? ` / ${row.caps.aiCallsPerDay} cap` : " (unlimited)"} ·{" "}
+                  <strong className="text-zinc-800">Outbound this month:</strong> {row.usage.outboundThisMonth}
+                  {row.caps ? ` / ${row.caps.outboundPerMonth} cap` : " (unlimited)"}
+                </p>
+                <p className="text-zinc-500">
+                  Open conversations: {row.usage.openConversations} · Escalated: {row.usage.escalated} · Failed sends: {row.usage.failedSends} · Feedback entries: {row.feedbackCount}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 pt-1">
                 {row.status !== "PAUSED" && row.status !== "EXITED" && (
                   <form action={statusAction}>
                     <input type="hidden" name="businessId" value={row.businessId} />
                     <input type="hidden" name="action" value="pause" />
-                    <GhostButton disabled={statusPending}>Pause</GhostButton>
+                    <GhostButton disabled={statusPending} variant="secondary">Pause</GhostButton>
                   </form>
                 )}
                 {row.status === "PAUSED" && (
                   <form action={statusAction}>
                     <input type="hidden" name="businessId" value={row.businessId} />
                     <input type="hidden" name="action" value="resume" />
-                    <GhostButton disabled={statusPending}>Resume</GhostButton>
+                    <GhostButton disabled={statusPending} variant="secondary">Resume</GhostButton>
                   </form>
                 )}
                 {row.status !== "EXITED" && (
-                  <form action={statusAction} className="flex items-center gap-2">
+                  <form action={statusAction} className="flex flex-wrap items-center gap-2">
                     <input type="hidden" name="businessId" value={row.businessId} />
                     <input type="hidden" name="action" value="exit" />
-                    <input name="reason" placeholder="exit reason (optional)" className="w-48 rounded-md border border-zinc-300 px-2 py-1 text-xs" maxLength={200} />
-                    <GhostButton disabled={statusPending}>Exit pilot</GhostButton>
+                    <Input name="reason" placeholder="Exit reason (optional)" className="w-48 py-1.5 text-xs" maxLength={200} />
+                    <GhostButton disabled={statusPending} variant="danger">Exit pilot</GhostButton>
                   </form>
                 )}
               </div>

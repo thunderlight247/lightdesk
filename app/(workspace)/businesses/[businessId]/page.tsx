@@ -13,70 +13,138 @@ export default async function BusinessOverviewPage({ params }: { params: Promise
 
   return (
     <div className="space-y-6">
-      <PageHeading title="Overview" />
+      <PageHeading
+        title="Overview"
+        lead="Manage business workspace profile, team members, conversation simulation lab, and channel integrations."
+      />
 
-      <section className="card divide-y divide-zinc-100 text-sm">
-        <Row label="Name">{business.name}</Row>
-        <Row label="Status">
-          <Chip tone="success">{business.status === "ACTIVE" ? "Active" : business.status}</Chip>
-        </Row>
-        <Row label="Location">{business.location ?? <Muted>Not set</Muted>}</Row>
-        <Row label="Description">
-          {business.description ? (
-            <span className="whitespace-pre-line">{business.description}</span>
-          ) : (
-            <Muted>
-              No description yet.
-              {capabilities.canUpdate && (
-                <>
-                  {" "}
-                  <Link href={`${base}/settings`} className="underline hover:text-zinc-700">
-                    Add one
-                  </Link>
-                  .
-                </>
-              )}
-            </Muted>
-          )}
-        </Row>
-        {memberCount !== null && <Row label="Members">{memberCount}</Row>}
-        <Row label="Workspace ID">
-          <code className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs">{business.slug}</code>
-        </Row>
-        <Row label="Created">{day(business.createdAt)}</Row>
-      </section>
-
-      <ul className="grid gap-3 sm:grid-cols-2">
+      {/* Quick Action Navigation Grid */}
+      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <li>
-          <Link href={`${base}/members`} className="card block p-4 transition-colors hover:border-zinc-300 hover:bg-zinc-50/40">
-            <span className="font-medium text-zinc-900">Members{capabilities.canManageInvitations ? " & invitations" : ""}</span>
-            <span className="mt-1 block text-sm text-zinc-600">
-              {capabilities.canManageInvitations ? "See who has access and invite people." : "See who has access to this business."}
+          <Link
+            href={`${base}/profile`}
+            className="card-interactive block p-4 sm:p-5 h-full group"
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-zinc-900 group-hover:text-brand-700">Business Profile</span>
+              <span className="text-zinc-400 group-hover:text-brand-600 group-hover:translate-x-0.5 transition-transform">→</span>
+            </div>
+            <span className="mt-1.5 block text-xs sm:text-sm text-zinc-500 leading-relaxed">
+              Maintain facts, FAQs, product catalogue, policies, and AI permissions.
             </span>
           </Link>
         </li>
+
+        <li>
+          <Link
+            href={`${base}/lab`}
+            className="card-interactive block p-4 sm:p-5 h-full group"
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-zinc-900 group-hover:text-brand-700">Conversation Lab</span>
+              <span className="text-zinc-400 group-hover:text-brand-600 group-hover:translate-x-0.5 transition-transform">→</span>
+            </div>
+            <span className="mt-1.5 block text-xs sm:text-sm text-zinc-500 leading-relaxed">
+              Simulate customer enquiries and inspect AI drafts against approved facts.
+            </span>
+          </Link>
+        </li>
+
+        <li>
+          <Link
+            href={`${base}/members`}
+            className="card-interactive block p-4 sm:p-5 h-full group"
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-zinc-900 group-hover:text-brand-700">
+                Members{capabilities.canManageInvitations ? " & Invitations" : ""}
+              </span>
+              <span className="text-zinc-400 group-hover:text-brand-600 group-hover:translate-x-0.5 transition-transform">→</span>
+            </div>
+            <span className="mt-1.5 block text-xs sm:text-sm text-zinc-500 leading-relaxed">
+              {capabilities.canManageInvitations ? "Manage team members and invite new collaborators." : "View authorized workspace team members."}
+            </span>
+          </Link>
+        </li>
+
         {capabilities.canUpdate && (
           <li>
-            <Link href={`${base}/settings`} className="card block p-4 transition-colors hover:border-zinc-300 hover:bg-zinc-50/40">
-              <span className="font-medium text-zinc-900">Settings</span>
-              <span className="mt-1 block text-sm text-zinc-600">Update the business location and description.</span>
+            <Link
+              href={`${base}/settings`}
+              className="card-interactive block p-4 sm:p-5 h-full group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-zinc-900 group-hover:text-brand-700">Settings</span>
+                <span className="text-zinc-400 group-hover:text-brand-600 group-hover:translate-x-0.5 transition-transform">→</span>
+              </div>
+              <span className="mt-1.5 block text-xs sm:text-sm text-zinc-500 leading-relaxed">
+                Update business name, physical location, and workspace details.
+              </span>
             </Link>
           </li>
         )}
       </ul>
+
+      {/* Workspace Details Card */}
+      <section className="card p-4 sm:p-6 space-y-4">
+        <h2 className="text-sm font-semibold text-zinc-900">Workspace information</h2>
+        <div className="divide-y divide-zinc-100 text-xs sm:text-sm">
+          <Row label="Business Name">
+            <span className="font-medium text-zinc-900">{business.name}</span>
+          </Row>
+          <Row label="Account Status">
+            <Chip tone="success" withDot>
+              {business.status === "ACTIVE" ? "Active" : business.status}
+            </Chip>
+          </Row>
+          <Row label="Location">
+            {business.location ? (
+              <span className="text-zinc-800">{business.location}</span>
+            ) : (
+              <span className="text-zinc-400 italic">Not set</span>
+            )}
+          </Row>
+          <Row label="Description">
+            {business.description ? (
+              <span className="whitespace-pre-line text-zinc-800 leading-relaxed">{business.description}</span>
+            ) : (
+              <span className="text-zinc-400 italic">
+                No description provided yet.
+                {capabilities.canUpdate && (
+                  <>
+                    {" "}
+                    <Link href={`${base}/settings`} className="font-medium text-brand-700 underline">
+                      Add description
+                    </Link>
+                  </>
+                )}
+              </span>
+            )}
+          </Row>
+          {memberCount !== null && (
+            <Row label="Team Size">
+              <span className="text-zinc-800 font-medium">{memberCount} member{memberCount === 1 ? "" : "s"}</span>
+            </Row>
+          )}
+          <Row label="Workspace ID">
+            <code className="rounded-md bg-zinc-100 px-2 py-0.5 font-mono text-xs text-zinc-700 border border-zinc-200/60">
+              {business.slug}
+            </code>
+          </Row>
+          <Row label="Created Date">
+            <span className="text-zinc-600">{day(business.createdAt)}</span>
+          </Row>
+        </div>
+      </section>
     </div>
   );
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid gap-1 p-3 sm:grid-cols-3 sm:gap-4 sm:p-4">
-      <dt className="text-zinc-500">{label}</dt>
-      <dd className="min-w-0 break-words sm:col-span-2">{children}</dd>
+    <div className="grid gap-1 py-3 sm:grid-cols-3 sm:gap-4">
+      <dt className="text-zinc-500 font-medium">{label}</dt>
+      <dd className="min-w-0 break-words sm:col-span-2 text-zinc-900">{children}</dd>
     </div>
   );
-}
-
-function Muted({ children }: { children: React.ReactNode }) {
-  return <span className="text-zinc-500">{children}</span>;
 }

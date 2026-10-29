@@ -20,21 +20,47 @@ export function FaqForm({
   const rev = faq ? `${faq.id}-${faq.revision}` : "new";
 
   return (
-    <form ref={ref} action={action} className="space-y-3">
+    <form ref={ref} action={action} className="space-y-4">
       <input type="hidden" name="businessId" value={businessId} />
       {faq && <input type="hidden" name="faqId" value={faq.id} />}
       {state.error && !state.fieldErrors?.question && !state.fieldErrors?.answer && <Alert>{state.error}</Alert>}
       {state.ok && state.message && <Alert tone="success">{state.message}</Alert>}
       <Field label="Customer question or topic" errors={state.fieldErrors?.question}>
-        <Input key={`q-${rev}`} name="question" required minLength={5} maxLength={300} defaultValue={faq?.question ?? ""} />
+        <Input
+          key={`q-${rev}`}
+          name="question"
+          required
+          minLength={5}
+          maxLength={300}
+          defaultValue={faq?.question ?? ""}
+          placeholder="e.g. Do you deliver on weekends?"
+        />
       </Field>
       <Field label="Approved answer" errors={state.fieldErrors?.answer} hint="Write exactly what LightDesk may tell customers.">
-        <Textarea key={`a-${rev}`} name="answer" rows={4} required maxLength={1500} defaultValue={faq?.answer ?? ""} />
+        <Textarea
+          key={`a-${rev}`}
+          name="answer"
+          rows={4}
+          required
+          maxLength={1500}
+          defaultValue={faq?.answer ?? ""}
+          placeholder="e.g. Yes, we deliver in Accra and Tema on Saturdays from 9am to 4pm."
+        />
       </Field>
-      <Field label="Category (optional)" errors={state.fieldErrors?.category}>
-        <Input key={`c-${rev}`} name="category" maxLength={60} defaultValue={faq?.category ?? ""} />
+      <Field label="Category (optional)" errors={state.fieldErrors?.category} hint="Used to group related questions (e.g. Delivery, Payment, Returns).">
+        <Input
+          key={`c-${rev}`}
+          name="category"
+          maxLength={60}
+          defaultValue={faq?.category ?? ""}
+          placeholder="e.g. Delivery"
+        />
       </Field>
-      <Button type="submit" disabled={pending}>{pending ? "Saving…" : faq ? "Save changes" : "Add FAQ"}</Button>
+      <div className="pt-1">
+        <Button type="submit" disabled={pending}>
+          {pending ? "Saving…" : faq ? "Save changes" : "Add FAQ entry"}
+        </Button>
+      </div>
     </form>
   );
 }

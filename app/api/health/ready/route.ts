@@ -29,8 +29,10 @@ export async function GET() {
       status: "ok",
       latencyMs: Date.now() - dbStart,
     };
-  } catch {
+  } catch (e) {
     isReady = false;
+    // Details go to the log stream only (wrangler tail); the response headings stay secret-free.
+    console.error("[health/ready] database check failed", e);
     checks.database = {
       status: "error",
       message: "Database unreachable",

@@ -1,10 +1,14 @@
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  runtime = "cloudflare"
+  // Prisma 7 engine-less generated client (Query Compiler WASM + driver adapters —
+  // no Query Engine binary, so it runs in workerd). Output is gitignored; the
+  // `postinstall` / `build` scripts regenerate it. Runtime routing: lib/db/client.ts.
+  output = "../lib/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum UserStatus {

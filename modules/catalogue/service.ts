@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/db/client";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/security/errors";
 import { recordAudit } from "@/modules/audit/service";

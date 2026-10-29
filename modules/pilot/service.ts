@@ -16,7 +16,7 @@
 import { prisma } from "@/lib/db/client";
 import { recordAudit } from "@/modules/audit/service";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/security/errors";
-import type { PilotEnrollment, UsageCaps } from "@prisma/client";
+import type { PilotEnrollment, UsageCaps } from "@/lib/generated/prisma/client";
 import { requireMembership } from "@/modules/permissions/access";
 import { SENT_LIKE_STATUSES } from "@/modules/whatsapp/statuses";
 

@@ -43,68 +43,128 @@ export function EntryField({
   const isPending = !!entry && entry.state === "DRAFT";
 
   return (
-    <section className="space-y-3 rounded-md border bg-white p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <label htmlFor={id} className="font-medium">{def.label}</label>
+    <section className="card p-4 sm:p-5 space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <label htmlFor={id} className="text-sm font-semibold tracking-tight text-zinc-900">
+          {def.label}
+        </label>
         <ItemBadge status={status} />
       </div>
-      <p id={`${id}-help`} className="text-sm text-neutral-600">{def.help}</p>
-      <p className="text-xs text-neutral-500">Why it matters: {def.why}</p>
+
+      <div className="space-y-1 text-xs sm:text-sm text-zinc-600">
+        <p id={`${id}-help`} className="leading-relaxed">{def.help}</p>
+        <p className="text-zinc-400 text-xs italic">Why it matters: {def.why}</p>
+      </div>
+
       {platformNote && <Alert tone="info">{platformNote}</Alert>}
 
       {status === "change" && entry && (
-        <div className="rounded border border-amber-300 bg-amber-50 p-2 text-sm">
-          <span className="font-medium">Approved value still in force: </span>
-          <span className="whitespace-pre-line break-words">{show(def, entry.approvedValue!)}</span>
+        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs sm:text-sm">
+          <p className="font-semibold text-amber-900">Currently approved in-force value:</p>
+          <p className="mt-1 whitespace-pre-line break-words text-amber-950 font-mono bg-white/70 p-2 rounded-lg border border-amber-200/60">
+            {show(def, entry.approvedValue!)}
+          </p>
         </div>
       )}
 
       {perms.save ? (
-        <form action={action} className="space-y-2">
+        <form action={action} className="space-y-3">
           <input type="hidden" name="businessId" value={businessId} />
           <input type="hidden" name="key" value={def.key} />
           {def.kind === "textarea" ? (
-            <Textarea key={rev} id={id} name="value" rows={4} maxLength={def.maxLength} required defaultValue={entry?.value ?? ""} aria-describedby={`${id}-help`} />
+            <Textarea
+              key={rev}
+              id={id}
+              name="value"
+              rows={4}
+              maxLength={def.maxLength}
+              required
+              defaultValue={entry?.value ?? ""}
+              aria-describedby={`${id}-help`}
+            />
           ) : def.kind === "select" || def.kind === "toggle" ? (
-            <Select key={rev} id={id} name="value" required defaultValue={entry?.value ?? ""} aria-describedby={`${id}-help`}>
+            <Select
+              key={rev}
+              id={id}
+              name="value"
+              required
+              defaultValue={entry?.value ?? ""}
+              aria-describedby={`${id}-help`}
+            >
               <option value="" disabled>Choose…</option>
               {def.options?.map((o) => (
-                <option key={o.value} value={o.value} disabled={blockEnable && o.value === "enabled"}>{o.label}</option>
+                <option key={o.value} value={o.value} disabled={blockEnable && o.value === "enabled"}>
+                  {o.label}
+                </option>
               ))}
             </Select>
           ) : (
             <Input
-              key={rev} id={id} name="value" required maxLength={def.maxLength} defaultValue={entry?.value ?? ""}
-              type={def.kind === "email" ? "email" : def.kind === "phone" ? "tel" : "text"} aria-describedby={`${id}-help`}
+              key={rev}
+              id={id}
+              name="value"
+              required
+              maxLength={def.maxLength}
+              defaultValue={entry?.value ?? ""}
+              type={def.kind === "email" ? "email" : def.kind === "phone" ? "tel" : "text"}
+              aria-describedby={`${id}-help`}
             />
           )}
-          {state.fieldErrors?.value?.map((e) => <p key={e} className="text-sm text-red-700">{e}</p>)}
+
+          {state.fieldErrors?.value?.map((e) => (
+            <p key={e} className="text-xs font-medium text-red-600">{e}</p>
+          ))}
           {state.error && !state.fieldErrors?.value && <Alert>{state.error}</Alert>}
           {state.ok && state.message && <Alert tone="success">{state.message}</Alert>}
-          <Button type="submit" disabled={pending}>{pending ? "Saving…" : "Save"}</Button>
+
+          <div className="pt-1">
+            <Button type="submit" disabled={pending}>
+              {pending ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
         </form>
       ) : (
-        <p className="whitespace-pre-line break-words text-sm">
-          {entry ? show(def, entry.value) : <span className="italic text-neutral-500">Not provided — LightDesk will treat this as unknown.</span>}
-        </p>
-      )}
-
-      {entry && (perms.approve || perms.discard || perms.clear) && (
-        <div className="flex flex-wrap gap-2">
-          {isPending && perms.approve && (
-            <ActionButton action={approveEntryAction} fields={{ businessId, entryId: entry.id }} label="Approve" pendingLabel="Approving…" variant="primary" />
-          )}
-          {isPending && perms.discard && (
-            <ActionButton action={discardEntryAction} fields={{ businessId, entryId: entry.id }} label="Discard change"
-              confirm={entry.approvedValue === null ? "Remove this draft?" : "Go back to the approved value?"} />
-          )}
-          {perms.clear && (
-            <ActionButton action={clearEntryAction} fields={{ businessId, entryId: entry.id }} label="Clear" variant="danger"
-              confirm="Mark this as not provided? LightDesk will treat it as unknown." />
+        <div className="rounded-xl bg-zinc-50 border border-zinc-100 p-3 text-sm">
+          {entry ? (
+            <p className="whitespace-pre-line break-words text-zinc-900">{show(def, entry.value)}</p>
+          ) : (
+            <p className="italic text-zinc-400">Not provided — LightDesk will treat this as unknown.</p>
           )}
         </div>
       )}
-      {meta && <p className="text-xs text-neutral-500">{meta}</p>}
+
+      {entry && (perms.approve || perms.discard || perms.clear) && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-3">
+          {isPending && perms.approve && (
+            <ActionButton
+              action={approveEntryAction}
+              fields={{ businessId, entryId: entry.id }}
+              label="Approve"
+              pendingLabel="Approving…"
+              variant="primary"
+            />
+          )}
+          {isPending && perms.discard && (
+            <ActionButton
+              action={discardEntryAction}
+              fields={{ businessId, entryId: entry.id }}
+              label="Discard change"
+              confirm={entry.approvedValue === null ? "Remove this draft?" : "Go back to the approved value?"}
+            />
+          )}
+          {perms.clear && (
+            <ActionButton
+              action={clearEntryAction}
+              fields={{ businessId, entryId: entry.id }}
+              label="Clear"
+              variant="danger"
+              confirm="Mark this as not provided? LightDesk will treat it as unknown."
+            />
+          )}
+        </div>
+      )}
+
+      {meta && <p className="text-xs text-zinc-400">{meta}</p>}
     </section>
   );
 }

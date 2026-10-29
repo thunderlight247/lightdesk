@@ -16,8 +16,8 @@
  *   throttles webhook-triggered drafting. A throttled message stays visible to the owner;
  *   drafting is skipped and audited — the customer is never auto-replied.
  */
-import { Prisma } from "@prisma/client";
-import type { LabResultStatus } from "@prisma/client";
+import { Prisma } from "@/lib/generated/prisma/client";
+import type { LabResultStatus } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/db/client";
 import { recordAudit } from "@/modules/audit/service";
 import type { AiProvider } from "@/modules/lab/ai/types";

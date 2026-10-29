@@ -3,8 +3,8 @@
  * owning business gets an audit trail; conversations default to OWNER_ONLY mode, so no AI call
  * ever happens here. There is no send path in this module yet — outbound is M6d by design.
  */
-import { Prisma } from "@prisma/client";
-import type { WhatsAppMessageStatus } from "@prisma/client";
+import { Prisma } from "@/lib/generated/prisma/client";
+import type { WhatsAppMessageStatus } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/db/client";
 import { recordAudit } from "@/modules/audit/service";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/lib/security/errors";

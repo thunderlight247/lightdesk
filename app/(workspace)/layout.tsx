@@ -6,12 +6,16 @@ export const dynamic = "force-dynamic";
 export default async function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUserForPage();
   return (
-    <>
+    <div className="flex min-h-screen flex-col bg-zinc-50/60">
       <Header user={user} />
-      <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6">{children}</main>
-      <footer className="mx-auto max-w-4xl px-4 pb-8 text-xs text-zinc-400 sm:px-6">
-        LightDesk · drafts are simulations until a live channel is connected and approved by the owner
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        {children}
+      </main>
+      <footer className="border-t border-zinc-200/60 bg-white/50 py-6 text-center text-xs text-zinc-400">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+          LightDesk · drafts are simulations until a live channel is connected and approved by the owner
+        </div>
       </footer>
-    </>
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { WhatsAppMessageStatus } from "@prisma/client";
+import type { WhatsAppMessageStatus } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/db/client";
 import { resetDb, twoTenants } from "../helpers/db";
 import { MockProvider, buildActiveProfile, groundedAnswer, lastRequestJson, testConfig } from "../helpers/lab";

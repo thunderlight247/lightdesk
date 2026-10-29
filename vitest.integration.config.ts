@@ -1,9 +1,37 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import { defineConfig, type Plugin } from "vitest/config";
+
+const WASM_MODULE_SUFFIX = ".wasm?module";
+const VIRTUAL_PREFIX = "\0wasm-module:";
+
+// Prisma's generated client (lib/generated/prisma) loads its query compiler with
+// `import("./query_compiler_fast_bg.wasm?module")`, which Vite cannot parse. Under Vitest
+// (plain Node) we resolve that import to a real WebAssembly.Module compiled from the file.
+// Test-only: the app build uses the Next/OpenNext pipeline (next.config.ts).
+function wasmModuleForVitest(): Plugin {
+  return {
+    name: "lightdesk-wasm-module-for-tests",
+    enforce: "pre",
+    resolveId(source, importer) {
+      if (!source.endsWith(WASM_MODULE_SUFFIX) || !importer) return null;
+      const file = path.resolve(path.dirname(importer), source.slice(0, -"?module".length));
+      return VIRTUAL_PREFIX + file;
+    },
+    load(id) {
+      if (!id.startsWith(VIRTUAL_PREFIX)) return null;
+      const file = id.slice(VIRTUAL_PREFIX.length);
+      const bytes = JSON.stringify([...readFileSync(file)]);
+      return `export default new WebAssembly.Module(new Uint8Array(${bytes}));`;
+    },
+  };
+}
 
 // Integration + security tests run against a REAL PostgreSQL database
 // (TEST_DATABASE_URL). They never skip: a missing database fails the run.
 export default defineConfig({
+  plugins: [wasmModuleForVitest()],
   resolve: { alias: { "@": fileURLToPath(new URL(".", import.meta.url)) } },
   test: {
     environment: "node",

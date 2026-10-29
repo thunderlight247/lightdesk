@@ -1,5 +1,5 @@
-import { Prisma } from "@prisma/client";
-import type { MembershipRole } from "@prisma/client";
+import { Prisma } from "@/lib/generated/prisma/client";
+import type { MembershipRole } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/db/client";
 import { getEnv } from "@/lib/env";
 import {

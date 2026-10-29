@@ -23,5 +23,31 @@
 		// Enable image optimization
 		// see https://opennext.js.org/cloudflare/howtos/image
 		"binding": "IMAGES"
+	},
+	"hyperdrive": [
+		{
+		// §3.1: Neon production-branch direct TCP endpoint behind Hyperdrive (ADR 0011).
+		// Created 2026-10-25: wrangler hyperdrive create lightdesk-pg
+		// (docs/m8-cloudflare-deploy-checklist.md §3.1). Verified remotely 2026-10-25: this id
+		// lives in the deploy account (CF_TOKEN / 7d0c…) alongside the pre-seeded secrets;
+		// it is NOT the OAuth (d0361…) account's config of the same name.
+		"binding": "HYPERDRIVE",
+		"id": "9ccd0462a50a498792527b5c32f92837",
+			// Local emulation target: opennextjs-cloudflare's build-time platform proxy needs a
+			// reachable Postgres when it prerenders against the HYPERDRIVE binding. This is the
+			// docker dev DB from docker-compose.yml — the deployed worker instead resolves the
+			// real Neon direct string via the binding's DATABASE_URL provider at runtime.
+			"localConnectionString": "postgresql://lightdesk:lightdesk_dev_only@localhost:55433/lightdesk?schema=public"
+		}
+	],
+	"vars": {
+		// Replaced with the real workers.dev URL right after the first deploy
+		// (the subdomain is only known then); see lib/env.ts APP_URL consumers.
+		// Set after the first deploy, when the workers.dev subdomain became known.
+		"APP_URL": "https://lightdesk.lightdesk.workers.dev",
+		// Prod AI selection per owner decision (both keys set as secrets).
+		"LAB_AI_PROVIDER": "deepseek",
+		// Must match .dev.vars / secrets (Meta Graph changelog check per .env.example).
+		"WHATSAPP_GRAPH_API_VERSION": "v26.0"
 	}
 }

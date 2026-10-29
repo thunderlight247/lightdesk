@@ -2,32 +2,39 @@
 
 @theme {
   /* LightDesk brand scale — used for primary actions, active navigation and focus states. */
-  --color-brand-50: #eef1fd;
-  --color-brand-100: #dfe6fb;
-  --color-brand-200: #c3cef6;
-  --color-brand-300: #9fafef;
-  --color-brand-400: #7a8ce8;
-  --color-brand-500: #5b6fde;
+  --color-brand-50: #f4f6fe;
+  --color-brand-100: #e7ebfc;
+  --color-brand-200: #d2daf9;
+  --color-brand-300: #afbef5;
+  --color-brand-400: #859aee;
+  --color-brand-500: #6378e4;
   --color-brand-600: #4357c8;
-  --color-brand-700: #3646a2;
-  --color-brand-800: #2c3880;
-  --color-brand-900: #26305f;
+  --color-brand-700: #3544a8;
+  --color-brand-800: #2d3888;
+  --color-brand-900: #28326e;
+  --color-brand-950: #191e45;
 }
 
 body {
-  @apply bg-zinc-50 text-zinc-900 antialiased;
-}
-
-::selection {
-  background-color: var(--color-brand-100);
+  @apply bg-zinc-50/70 text-zinc-900 antialiased min-h-screen selection:bg-brand-100 selection:text-brand-900;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
 /* Shared surface style so cards are consistent without repeating utility strings. */
 @utility card {
-  @apply rounded-xl border border-zinc-200 bg-white shadow-sm;
+  @apply rounded-2xl border border-zinc-200/80 bg-white shadow-xs transition-shadow duration-150;
 }
 
-/* Horizontally scrollable pill nav bar (mobile-friendly). */
-@utility nav-scroll {
-  @apply flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none];
+@utility card-interactive {
+  @apply card hover:border-zinc-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500;
 }
+
+/* Horizontally scrollable pill nav bar (mobile-friendly with momentum scroll). */
+@utility nav-scroll {
+  @apply flex gap-1.5 overflow-x-auto pb-1.5 pt-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [-webkit-overflow-scrolling:touch];
+}
+
+@utility no-scrollbar {
+  @apply [-ms-overflow-style:none] [scrollbar-width:none];
+}
+

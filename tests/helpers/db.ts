@@ -1,4 +1,4 @@
-import type { MembershipRole, UserStatus } from "@prisma/client";
+import type { MembershipRole, UserStatus } from "@/lib/generated/prisma/client";
 import { createSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/client";
 import { hashPassword } from "@/lib/security/password";

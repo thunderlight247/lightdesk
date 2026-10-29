@@ -32,29 +32,41 @@ export default async function BusinessLayout({
   if (can(membership.role, "business:update")) items.push({ href: `${base}/settings`, label: "Settings" });
 
   return (
-    <div>
-      <div className="mb-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
+    <div className="space-y-6">
+      <div className="space-y-4">
+        {/* Business header banner */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200/80 bg-white p-4 sm:p-5 shadow-xs">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-wide text-zinc-500">Business workspace</p>
-            <p className="break-words text-lg font-semibold tracking-tight text-zinc-900">{membership.business.name}</p>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-brand-700 bg-brand-50 px-2 py-0.5 rounded-md">
+                Workspace
+              </span>
+              <RoleBadge role={membership.role} />
+            </div>
+            <h1 className="mt-1.5 break-words text-xl font-bold tracking-tight text-zinc-900 sm:text-2xl">
+              {membership.business.name}
+            </h1>
           </div>
+
           {businesses.length > 1 && (
             <details className="relative text-sm">
-              <summary className="cursor-pointer rounded-lg border border-zinc-300 px-3 py-1.5 text-zinc-700 shadow-sm transition-colors hover:border-zinc-400 hover:bg-zinc-50">
-                Switch business
+              <summary className="cursor-pointer list-none select-none inline-flex items-center gap-1.5 rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-xs font-medium text-zinc-700 shadow-xs transition-colors hover:border-zinc-400 hover:bg-zinc-50 active:bg-zinc-100">
+                <span>Switch business</span>
+                <svg className="h-3.5 w-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
               </summary>
-              <ul className="mt-1 divide-y rounded-lg border border-zinc-200 bg-white shadow-sm">
+              <ul className="absolute right-0 z-30 mt-2 w-64 max-h-72 overflow-y-auto divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white py-1 shadow-lg">
                 {businesses.map((b) => (
                   <li key={b.id}>
                     <Link
                       href={`/businesses/${b.id}`}
                       aria-current={b.id === membership.businessId ? "true" : undefined}
-                      className={`flex items-center justify-between gap-2 px-3 py-2 transition-colors hover:bg-zinc-50 ${
-                        b.id === membership.businessId ? "font-medium text-brand-800" : ""
+                      className={`flex items-center justify-between gap-2 px-3.5 py-2.5 text-xs transition-colors hover:bg-zinc-50 ${
+                        b.id === membership.businessId ? "bg-brand-50/70 font-semibold text-brand-900" : "text-zinc-700"
                       }`}
                     >
-                      <span>{b.name}</span>
+                      <span className="truncate">{b.name}</span>
                       <RoleBadge role={b.role} />
                     </Link>
                   </li>
@@ -62,18 +74,13 @@ export default async function BusinessLayout({
               </ul>
             </details>
           )}
-          {businesses.length <= 1 && <RoleBadge role={membership.role} />}
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <BusinessNav items={items} />
-          {businesses.length > 1 && (
-            <div className="ml-auto hidden sm:block">
-              <RoleBadge role={membership.role} />
-            </div>
-          )}
-        </div>
+
+        {/* Business sub-navigation pills */}
+        <BusinessNav items={items} />
       </div>
-      {children}
+
+      <div>{children}</div>
     </div>
   );
 }

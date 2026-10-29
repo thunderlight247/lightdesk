@@ -12,7 +12,7 @@
  * - Provider errors are mapped to safe, generic error kinds; messages never contain
  *   provider bodies, keys or prompts.
  */
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/db/client";
 import { createProvider } from "@/modules/lab/ai/factory";
 import { ProviderError, type AiProvider, type Usage } from "@/modules/lab/ai/types";

@@ -12,15 +12,29 @@ export function LoginForm({ next }: { next?: string }) {
     <form action={action} className="space-y-4">
       {state.error && <Alert>{state.error}</Alert>}
       <input type="hidden" name="next" value={next ?? ""} />
-      <Field label="Email">
-        <Input name="email" type="email" autoComplete="username" required />
+      <Field label="Email address">
+        <Input
+          name="email"
+          type="email"
+          autoComplete="username"
+          required
+          placeholder="you@example.com"
+        />
       </Field>
       <Field label="Password">
-        <Input name="password" type="password" autoComplete="current-password" required />
+        <Input
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          required
+          placeholder="••••••••••••"
+        />
       </Field>
-      <Button type="submit" disabled={pending}>
-        {pending ? "Signing in…" : "Sign in"}
-      </Button>
+      <div className="pt-2">
+        <Button type="submit" disabled={pending} className="w-full" size="lg">
+          {pending ? "Signing in…" : "Sign in"}
+        </Button>
+      </div>
     </form>
   );
 }

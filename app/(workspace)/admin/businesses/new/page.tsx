@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import { CreateBusinessForm } from "@/components/forms/create-business-form";
+import { PageHeading, CardTitle } from "@/components/ui/card";
+import { Chip } from "@/components/ui/field";
 import { requireUserForPage } from "@/lib/auth/guards";
 import { AppError } from "@/lib/security/errors";
 import { listAllBusinessNames } from "@/modules/businesses/service";
@@ -10,22 +12,36 @@ export default async function NewBusinessPage() {
     if (err instanceof AppError) notFound();
     throw err;
   });
+
   return (
-    <div className="space-y-8">
-      <p className="text-xs uppercase tracking-wide text-amber-800">Platform administration</p>
-      <h1 className="text-xl font-semibold">Create a business</h1>
-      <p className="text-sm text-neutral-600">
-        Platform administrators can create businesses but do not get access to their data. The owner joins via invitation.
-      </p>
-      <CreateBusinessForm />
-      <ul className="divide-y rounded-md border bg-white text-sm">
-        {businesses.map((b) => (
-          <li key={b.id} className="flex justify-between p-3">
-            <span>{b.name}</span>
-            <span className="text-xs text-neutral-500">{b.status}</span>
-          </li>
-        ))}
-      </ul>
+    <div className="space-y-6">
+      <PageHeading
+        title="Create a business"
+        lead="Platform administrators can create businesses and mint owner invitations. Platform administrators do not gain access to business operational data."
+      />
+
+      <section className="card p-4 sm:p-6 space-y-4">
+        <CardTitle title="New business workspace" subtitle="Creates the workspace and generates a single-use onboarding link for the owner." />
+        <CreateBusinessForm />
+      </section>
+
+      <section className="card p-4 sm:p-6 space-y-3">
+        <CardTitle
+          title={
+            <span>
+              All platform businesses <span className="font-normal text-zinc-500">({businesses.length})</span>
+            </span>
+          }
+        />
+        <ul className="divide-y divide-zinc-100 text-xs sm:text-sm">
+          {businesses.map((b) => (
+            <li key={b.id} className="flex items-center justify-between py-2.5">
+              <span className="font-medium text-zinc-900">{b.name}</span>
+              <Chip tone="success" withDot>{b.status}</Chip>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   );
 }

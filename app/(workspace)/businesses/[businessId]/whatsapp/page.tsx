@@ -19,15 +19,21 @@ export default async function WhatsAppInboxPage({ params }: { params: Promise<{ 
     <div className="space-y-6">
       <PageHeading
         title="WhatsApp inbox"
-        lead="Live customer conversations connected through the official WhatsApp Cloud API. New conversations are owner-controlled; nothing is sent automatically."
-        actions={connection ? <Chip tone="success">Connected · {connection.displayPhoneNumber}</Chip> : undefined}
+        lead="Live customer conversations connected via the official WhatsApp Cloud API. Messages are owner-controlled; no replies are sent without your explicit review and approval."
+        actions={
+          connection ? (
+            <Chip tone="success" withDot>
+              Connected: {connection.displayPhoneNumber}
+            </Chip>
+          ) : undefined
+        }
       />
 
       {providerDegraded && (
         <Alert tone="info">
           Meta&apos;s messaging service has been unavailable since {fmtDateTime(providerDegraded.since)}.{" "}
           {queuedCount === 0
-            ? "Sending may be slow; no replies are waiting."
+            ? "Sending may be delayed; no replies are currently queued."
             : `${queuedCount} approved ${queuedCount === 1 ? "reply is" : "replies are"} queued and will be sent automatically. Nothing is lost.`}
         </Alert>
       )}
@@ -39,27 +45,62 @@ export default async function WhatsAppInboxPage({ params }: { params: Promise<{ 
       )}
 
       {!connection ? (
-        <section className="card space-y-2 border-dashed p-5">
-          <h2 className="font-semibold text-zinc-900">No WhatsApp number connected</h2>
-          <p className="text-sm text-zinc-600">Connect your business&apos;s own WhatsApp number through Meta&apos;s official Cloud API — owners can do it from the connection settings; otherwise ask your platform administrator.</p>
-          <Link href={`${base}/settings`} className="inline-block text-sm text-brand-700 underline">Open connection settings →</Link>
+        <section className="card space-y-3 border-dashed p-6 sm:p-8 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </div>
+          <div className="max-w-md mx-auto">
+            <h2 className="font-semibold text-zinc-900 text-base">No WhatsApp number connected</h2>
+            <p className="mt-1 text-xs sm:text-sm text-zinc-500">
+              Connect your official WhatsApp Business number through Meta&apos;s Cloud API. Business owners can complete setup in Connection Settings.
+            </p>
+          </div>
+          <div className="pt-2">
+            <Link
+              href={`${base}/settings`}
+              className="inline-flex min-h-[38px] items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-brand-700"
+            >
+              Open connection settings →
+            </Link>
+          </div>
         </section>
       ) : conversations.length === 0 ? (
-        <p className="card border-dashed p-6 text-center text-sm text-zinc-600">No customer conversations yet. New WhatsApp messages will appear here.</p>
+        <div className="card border-dashed p-8 text-center text-sm text-zinc-500">
+          No customer conversations yet. Inbound customer WhatsApp messages will appear here in real time.
+        </div>
       ) : (
-        <section aria-label="Customer conversations" className="card divide-y divide-zinc-100">
+        <section aria-label="Customer conversations" className="card divide-y divide-zinc-100 overflow-hidden">
           {conversations.map((conversation) => (
-            <Link key={conversation.id} href={`${base}/${conversation.id}`} className="flex flex-wrap items-start justify-between gap-3 p-4 transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500">
-              <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-zinc-900">{conversation.customerName ?? conversation.customerPhone}</span>
-                  <Chip tone={conversation.status === "ESCALATED" ? "danger" : "neutral"}>{conversation.status.toLowerCase()}</Chip>
-                  <Chip tone="brand">{conversation.mode === "OWNER_ONLY" ? "Owner only" : "AI assist"}</Chip>
-                </span>
-                <span className="mt-1 block truncate text-sm text-zinc-600">{conversation.lastMessageDirection === "OUTBOUND" ? "You: " : ""}{conversation.lastMessagePreview}</span>
-                <span className="mt-1 block text-xs text-zinc-500">{conversation.customerPhone} · {conversation.messageCount} messages{connection.coexistence ? " · app coexistence" : ""}</span>
-              </span>
-              <time className="shrink-0 text-xs text-zinc-500">{fmtDateTime(conversation.lastMessageAt)}</time>
+            <Link
+              key={conversation.id}
+              href={`${base}/${conversation.id}`}
+              className="flex flex-wrap items-start justify-between gap-3 p-4 sm:p-5 transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="font-semibold text-zinc-900 text-sm">
+                    {conversation.customerName ?? conversation.customerPhone}
+                  </span>
+                  <Chip tone={conversation.status === "ESCALATED" ? "danger" : "neutral"} withDot>
+                    {conversation.status.toLowerCase()}
+                  </Chip>
+                  <Chip tone="brand">
+                    {conversation.mode === "OWNER_ONLY" ? "Owner only" : "AI assist"}
+                  </Chip>
+                </div>
+                <p className="truncate text-xs sm:text-sm text-zinc-600">
+                  {conversation.lastMessageDirection === "OUTBOUND" ? "You: " : ""}{conversation.lastMessagePreview}
+                </p>
+                <p className="mt-1 text-xs text-zinc-400">
+                  {conversation.customerPhone} · {conversation.messageCount} message{conversation.messageCount === 1 ? "" : "s"}
+                  {connection.coexistence ? " · app coexistence" : ""}
+                </p>
+              </div>
+              <time className="shrink-0 text-xs text-zinc-400">
+                {fmtDateTime(conversation.lastMessageAt)}
+              </time>
             </Link>
           ))}
         </section>
