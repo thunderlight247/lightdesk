@@ -98,6 +98,9 @@ model User {
   invitationsAccepted Invitation[]         @relation("InvitationAcceptor")
   auditEvents         AuditEvent[]
   pilotFeedback       PilotFeedback[]
+  assignedConversations WhatsAppConversation[] @relation("ConversationAssignee")
+  notesWritten          ConversationNote[]
+  ordersCreated         OrderLead[]
 }
 
 model Session {
@@ -149,6 +152,9 @@ model Business {
   pilotEnrollment       PilotEnrollment?
   usageCaps             UsageCaps?
   pilotFeedback         PilotFeedback[]
+  conversationNotes     ConversationNote[]
+  orderLeads            OrderLead[]
+  quickReplies          QuickReply[]
 }
 
 model BusinessMembership {
@@ -480,14 +486,19 @@ model WhatsAppConversation {
   mode             WhatsAppConversationMode   @default(OWNER_ONLY)
   status           WhatsAppConversationStatus @default(ACTIVE)
   escalationReason String?
+  assignedToId     String?
+  assignedAt       DateTime?
   lastMessageAt    DateTime                   @default(now())
   createdAt        DateTime                   @default(now())
   updatedAt        DateTime                   @updatedAt
 
   connection  WhatsAppConnection   @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   business    Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  assignedTo  User?                @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   messages    WhatsAppMessage[]
   generations WhatsAppGeneration[]
+  notes       ConversationNote[]
+  orders      OrderLead[]
 
   @@unique([connectionId, customerPhone])
   @@index([businessId, lastMessageAt])
@@ -642,3 +653,67 @@ model WhatsAppGeneration {
   @@unique([conversationId, idempotencyKey])
   @@index([businessId, createdAt])
 }
+
+// ---- Frontline Team Operations & Mini-CRM ------------------------------------------------
+
+model ConversationNote {
+  id               String   @id @default(cuid())
+  businessId       String
+  conversationId   String   // WhatsAppConversation id or LabConversation id
+  conversationType String   @default("whatsapp") // "whatsapp" | "lab"
+  content          String   @db.VarChar(1000)
+  authorId         String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  business     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  author       User                  @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  conversation WhatsAppConversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, conversationId])
+  @@index([conversationId, createdAt])
+}
+
+model OrderLead {
+  id              String   @id @default(cuid())
+  businessId      String
+  conversationId  String?
+  customerName    String   @db.VarChar(120)
+  customerPhone   String   @db.VarChar(40)
+  items           Json     // Array of { name: string, quantity: number, priceGhs: number }
+  totalGhs        Decimal  @db.Decimal(10, 2)
+  deliveryAddress String?  @db.VarChar(300)
+  deliveryNotes   String?  @db.VarChar(500)
+  status          String   @default("PENDING") // PENDING | CONFIRMED | OUT_FOR_DELIVERY | COMPLETED | CANCELLED
+  paymentStatus   String   @default("UNPAID")  // UNPAID | VERIFIED | REFUNDED
+  receiptRef      String?  @db.VarChar(100)
+  createdById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  business     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  createdBy    User?                 @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  conversation WhatsAppConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, status])
+  @@index([businessId, createdAt])
+  @@index([conversationId])
+}
+
+model QuickReply {
+  id          String   @id @default(cuid())
+  businessId  String
+  shortcut    String   @db.VarChar(40) // e.g. "/delivery", "/momo", "/hours"
+  title       String   @db.VarChar(100)
+  content     String   @db.VarChar(1000)
+  category    String?  @db.VarChar(50)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, shortcut])
+  @@index([businessId, category])
+}
+

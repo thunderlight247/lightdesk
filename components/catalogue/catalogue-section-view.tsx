@@ -5,6 +5,7 @@ import { Alert, Chip } from "@/components/ui/field";
 import {
   approveCatalogueItemAction,
   deleteCatalogueItemAction,
+  toggleCatalogueItemStockAction,
 } from "@/app/(workspace)/businesses/[businessId]/profile/catalogue-actions";
 import { CatalogueImportForm } from "@/components/catalogue/catalogue-import-form";
 import { CatalogueItemForm } from "@/components/catalogue/catalogue-item-form";
@@ -139,25 +140,36 @@ export function CatalogueSectionView({
                     </div>
                   </div>
 
-                  <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-zinc-100 pt-3">
-                    {!isApproved && canApprove && (
-                      <ActionButton
-                        action={approveCatalogueItemAction}
-                        fields={{ businessId, itemId: item.id }}
-                        label="Approve item"
-                        pendingLabel="Approving…"
-                        variant="primary"
-                      />
-                    )}
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 pt-3">
                     {canEdit && (
                       <ActionButton
-                        action={deleteCatalogueItemAction}
+                        action={toggleCatalogueItemStockAction}
                         fields={{ businessId, itemId: item.id }}
-                        label="Delete"
-                        pendingLabel="Deleting…"
-                        variant="danger"
+                        label={item.inStock ? "Mark Out of Stock" : "Mark In Stock"}
+                        pendingLabel="Updating…"
+                        variant="secondary"
                       />
                     )}
+                    <div className="flex items-center gap-2">
+                      {!isApproved && canApprove && (
+                        <ActionButton
+                          action={approveCatalogueItemAction}
+                          fields={{ businessId, itemId: item.id }}
+                          label="Approve item"
+                          pendingLabel="Approving…"
+                          variant="primary"
+                        />
+                      )}
+                      {canEdit && (
+                        <ActionButton
+                          action={deleteCatalogueItemAction}
+                          fields={{ businessId, itemId: item.id }}
+                          label="Delete"
+                          pendingLabel="Deleting…"
+                          variant="danger"
+                        />
+                      )}
+                    </div>
                   </div>
                 </li>
               );

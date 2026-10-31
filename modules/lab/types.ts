@@ -56,4 +56,4 @@ export type DraftResult = {
 
 export const MAX_CUSTOMER_CHARS = 1000;
 export const MAX_REPLY_CHARS = 1200;
-export const SIMULATION_NOTICE = "Simulation only — this was not sent to any customer.";
+export const SIMULATION_NOTICE = "Test mode — this reply was not sent to any customer.";

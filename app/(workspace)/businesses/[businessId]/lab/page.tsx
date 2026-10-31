@@ -8,7 +8,6 @@ import { Alert, Chip } from "@/components/ui/field";
 import { businessIdSchema } from "@/lib/validation/schemas";
 import { orNotFound, requireUserForPage } from "@/lib/auth/guards";
 import { getLabReadiness, listConversations } from "@/modules/lab/service";
-import { SIMULATION_NOTICE } from "@/modules/lab/types";
 
 export default async function LabPage({ params }: { params: Promise<{ businessId: string }> }) {
   const user = await requireUserForPage();
@@ -28,8 +27,8 @@ export default async function LabPage({ params }: { params: Promise<{ businessId
         title="Conversation lab"
         lead={
           <>
-            Simulate customer enquiries and inspect how LightDesk generates responses strictly using your <em>approved</em> business facts.{" "}
-            {SIMULATION_NOTICE} Nothing here is sent to WhatsApp or any external user.
+            Test customer enquiries and check how LightDesk answers, using only your <em>approved</em> business facts.{" "}
+            Test mode: nothing here is sent to WhatsApp or any customer.
           </>
         }
       />
@@ -91,26 +90,26 @@ export default async function LabPage({ params }: { params: Promise<{ businessId
         )}
 
         <p className="text-xs text-zinc-400 leading-relaxed">
-          Draft generation is processed by the configured external AI provider (Google Gemini). Review provider terms before testing; this lab is designed for simulated, non-confidential test queries.
+          Draft generation is processed by the configured AI provider (Google Gemini). Review provider terms before testing, and avoid entering real customer personal data in test conversations.
         </p>
       </section>
 
-      {/* Start new simulation form */}
+      {/* Start new test conversation form */}
       {ready.canUse && <NewConversationForm businessId={businessId} />}
 
       {/* Test Conversations List */}
       <section aria-labelledby="convos" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 id="convos" className="text-sm font-semibold text-zinc-900">
-            Test simulations <span className="font-normal text-zinc-500">({conversations.length})</span>
+            Test conversations <span className="font-normal text-zinc-500">({conversations.length})</span>
           </h2>
         </div>
 
         {conversations.length === 0 ? (
           <div className="card border-dashed p-8 text-center text-sm text-zinc-500">
-            <p>No test simulations started yet.</p>
+            <p>No test conversations started yet.</p>
             <p className="mt-1 text-xs text-zinc-400">
-              {ready.canUse ? "Create a simulation above to test how customer enquiries are answered." : "An owner or admin can start a new simulation."}
+              {ready.canUse ? "Create a test conversation above to check how customer enquiries are answered." : "An owner or admin can start a new test conversation."}
             </p>
           </div>
         ) : (
@@ -123,7 +122,7 @@ export default async function LabPage({ params }: { params: Promise<{ businessId
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="font-semibold text-zinc-900 truncate">{c.title ?? "Empty simulation"}</p>
+                      <p className="font-semibold text-zinc-900 truncate">{c.title ?? "Empty test conversation"}</p>
                       <ConversationStatusBadge status={c.status} />
                     </div>
                     <p className="mt-1 text-xs text-zinc-500">

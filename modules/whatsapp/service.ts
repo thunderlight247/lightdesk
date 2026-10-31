@@ -206,6 +206,8 @@ export async function listWhatsAppConversations(actorId: string, businessId: str
     select: {
       id: true, customerPhone: true, customerName: true, mode: true, status: true,
       escalationReason: true, lastMessageAt: true, createdAt: true,
+      assignedToId: true,
+      assignedTo: { select: { id: true, name: true, email: true } },
       _count: { select: { messages: true } },
       messages: { orderBy: { createdAt: "desc" }, take: 1, select: { text: true, type: true, direction: true } },
     },
@@ -239,6 +241,8 @@ export async function getWhatsAppConversation(actorId: string, businessId: strin
     select: {
       id: true, connectionId: true, customerPhone: true, customerName: true, mode: true,
       status: true, escalationReason: true, lastMessageAt: true, createdAt: true,
+      assignedToId: true, assignedAt: true,
+      assignedTo: { select: { id: true, name: true, email: true } },
       messages: {
         orderBy: { createdAt: "asc" },
         select: {

@@ -311,3 +311,40 @@ export async function detectPriceConflicts(actorId: string, businessId: string):
 
   return conflicts;
 }
+
+export async function toggleCatalogueItemStock(actorId: string, businessId: string, itemId: string) {
+  const membership = await context(actorId, businessId, "profile:edit");
+  const profile = await loadProfile(prisma, businessId);
+
+  const existing = await prisma.catalogueItem.findFirst({
+    where: { id: itemId, profileId: profile.id },
+  });
+  if (!existing) throw new NotFoundError("Catalogue item not found");
+
+  const newStock = !existing.inStock;
+  const isOwner = membership.role === "OWNER";
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.catalogueItem.update({
+      where: { id: itemId },
+      data: {
+        inStock: newStock,
+        updatedById: actorId,
+        revision: { increment: 1 },
+        ...(isOwner ? { approvedInStock: newStock } : {}),
+      },
+    });
+
+    await touchProfile(tx, profile.id);
+
+    await recordAudit(tx, {
+      businessId,
+      actorUserId: actorId,
+      action: "catalogue_item.stock_toggled",
+      metadata: { itemId, inStock: newStock, approvedInStock: isOwner ? newStock : existing.approvedInStock },
+    });
+
+    return updated;
+  });
+}
+

@@ -5,12 +5,21 @@ import { PageHeading } from "@/components/ui/card";
 import { WhatsAppReplyForm } from "@/components/whatsapp/reply-form";
 import { WhatsAppModeControls } from "@/components/whatsapp/mode-controls";
 import { WhatsAppQueuedCancel } from "@/components/whatsapp/queued-cancel";
+import { ConversationAssignee } from "@/components/whatsapp/conversation-assignee";
+import { QuickRepliesBar } from "@/components/whatsapp/quick-replies-bar";
+import { OrderCaptureCard } from "@/components/whatsapp/order-capture-card";
+import { ReceiptInspector } from "@/components/whatsapp/receipt-inspector";
+import { ConversationNotes } from "@/components/whatsapp/conversation-notes";
 import { fmtDateTime } from "@/components/profile/format";
 import { loadMembershipOrNotFound, orNotFound, requireUserForPage } from "@/lib/auth/guards";
 import { businessIdSchema } from "@/lib/validation/schemas";
 import { getWhatsAppConversation } from "@/modules/whatsapp/service";
 import { asEvidence, asStrings } from "@/modules/lab/pipeline";
 import { can } from "@/modules/permissions/roles";
+import { listMembers } from "@/modules/businesses/service";
+import { listConversationNotes } from "@/modules/frontline/notes";
+import { listOrderLeads } from "@/modules/frontline/orders";
+import { listQuickReplies } from "@/modules/frontline/quick-replies";
 
 const DRAFT_STATUS_TONE: Record<string, "success" | "brand" | "danger" | "neutral"> = {
   ANSWERABLE: "success",
@@ -25,10 +34,16 @@ export default async function WhatsAppConversationPage({ params }: { params: Pro
   const parsed = businessIdSchema.safeParse(rawBusinessId);
   if (!parsed.success) notFound();
   const businessId = parsed.data;
-  const [membership, view] = await Promise.all([
+
+  const [membership, view, members, notes, orders, quickReplies] = await Promise.all([
     loadMembershipOrNotFound(user.id, businessId),
     orNotFound(getWhatsAppConversation(user.id, businessId, conversationId)),
+    listMembers(user.id, businessId).catch(() => []),
+    listConversationNotes(user.id, businessId, conversationId).catch(() => []),
+    listOrderLeads(user.id, businessId, { conversationId }).catch(() => []),
+    listQuickReplies(user.id, businessId).catch(() => []),
   ]);
+
   const { conversation, readiness, latestDraft } = view;
   const maySend = can(membership.role, "whatsapp:send");
   const base = `/businesses/${businessId}/whatsapp`;
@@ -36,13 +51,31 @@ export default async function WhatsAppConversationPage({ params }: { params: Pro
 
   return (
     <div className="space-y-6">
-      <p><Link className="text-sm text-brand-700 underline" href={base}>← WhatsApp inbox</Link></p>
-      <PageHeading title={title} lead={conversation.customerPhone} actions={
-        <>
-          <Chip tone={readiness.status === "ESCALATED" ? "danger" : "neutral"}>{readiness.status.toLowerCase()}</Chip>
-          <Chip tone="brand">{readiness.mode === "OWNER_ONLY" ? "Owner only" : "AI assist"}</Chip>
-        </>
-      } />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p><Link className="text-sm font-medium text-brand-700 hover:text-brand-900 underline" href={base}>← WhatsApp inbox</Link></p>
+        <ConversationAssignee
+          businessId={businessId}
+          conversationId={conversationId}
+          currentAssigneeId={conversation.assignedToId}
+          members={members}
+        />
+      </div>
+
+      <PageHeading
+        title={title}
+        lead={
+          conversation.customerName
+            ? `${conversation.customerPhone}${conversation.assignedTo ? ` · Assigned to ${conversation.assignedTo.name}` : ""}`
+            : conversation.assignedTo ? `Assigned to ${conversation.assignedTo.name}` : undefined
+        }
+        actions={
+          <>
+            <Chip tone={readiness.status === "ESCALATED" ? "danger" : "neutral"}>{readiness.status.toLowerCase()}</Chip>
+            <Chip tone="brand">{readiness.mode === "OWNER_ONLY" ? "Owner only" : "AI assist"}</Chip>
+          </>
+        }
+      />
+
       {conversation.escalationReason && <Alert tone="info">Human follow-up: {conversation.escalationReason}</Alert>}
       {readiness.providerDegraded && (
         <Alert tone="info">
@@ -51,6 +84,7 @@ export default async function WhatsAppConversationPage({ params }: { params: Pro
         </Alert>
       )}
 
+      {/* Messages Feed */}
       <section aria-label="Conversation messages" className="card space-y-3 p-4 sm:p-6">
         {conversation.messages.length === 0 ? <p className="text-sm text-zinc-600">No messages yet.</p> : conversation.messages.map((message) => {
           const isDraft = message.draftState === "DRAFT";
@@ -89,32 +123,8 @@ export default async function WhatsAppConversationPage({ params }: { params: Pro
         })}
       </section>
 
-      <section aria-labelledby="send-status" className="card space-y-3 p-4 sm:p-5">
-        <h2 id="send-status" className="text-sm font-semibold text-zinc-900">Reply status</h2>
-        <dl className="grid gap-2 text-sm sm:grid-cols-2">
-          <div><dt className="inline text-zinc-500">Customer service window: </dt><dd className="inline"><Chip tone={readiness.windowOpen ? "success" : "danger"}>{readiness.windowOpen ? "Open" : "Closed"}</Chip></dd></div>
-          <div><dt className="inline text-zinc-500">Free service messages this month: </dt><dd className="inline">{readiness.meterFree} remaining ({readiness.meterUsed} used)</dd></div>
-          {readiness.windowClosesAt && <div className="sm:col-span-2"><dt className="inline text-zinc-500">Window closes: </dt><dd className="inline">{fmtDateTime(readiness.windowClosesAt)}</dd></div>}
-          {readiness.queued && (
-            <div className="sm:col-span-2">
-              <dt className="inline text-zinc-500">Queued replies: </dt>
-              <dd className="inline">{readiness.queued.count} waiting — next send attempt {readiness.queued.nextRetryAt ? fmtDateTime(readiness.queued.nextRetryAt) : "as soon as the service recovers"}</dd>
-            </div>
-          )}
-        </dl>
-        {!readiness.windowOpen && <Alert tone="info">The 24-hour customer service window is closed. Wait for the customer to message again, or reply from the WhatsApp Business app.</Alert>}
-        {readiness.meterFree === 0 && <Alert tone="info">The 1,000-message free service tier has been used this month. Meta may charge for additional messages; confirm billing before sending.</Alert>}
-      </section>
-
-      <section aria-labelledby="control-heading" className="card space-y-3 p-4 sm:p-5">
-        <h2 id="control-heading" className="text-sm font-semibold text-zinc-900">Conversation control</h2>
-        {maySend && readiness.status !== "RESOLVED"
-          ? <WhatsAppModeControls businessId={businessId} conversationId={conversationId} mode={readiness.mode as "OWNER_ONLY" | "AI_ASSIST"} />
-          : readiness.status === "RESOLVED" ? <Alert tone="info">This conversation is resolved.</Alert> :
-            <Alert tone="info">Changing AI assistance is an owner/admin action.</Alert>}
-      </section>
-
-      <section aria-labelledby="reply-heading" className="card space-y-3 p-4 sm:p-5">
+      {/* Reply Surface with Quick Replies */}
+      <section aria-labelledby="reply-heading" className="card space-y-4 p-4 sm:p-5">
         <h2 id="reply-heading" className="text-sm font-semibold text-zinc-900">{latestDraft ? "Review and send the AI draft" : "Send a reply"}</h2>
         {!maySend ? <Alert tone="info">This owner console is read-only for your role. A business owner or admin must send replies.</Alert> :
           readiness.status === "RESOLVED" ? <Alert tone="info">This conversation is resolved and sending is disabled.</Alert> : (
@@ -132,6 +142,12 @@ export default async function WhatsAppConversationPage({ params }: { params: Pro
                   {readiness.queued.count} approved {readiness.queued.count === 1 ? "reply is" : "replies are"} waiting to send above. Compose a new reply once it has sent, or cancel it from the queued message.
                 </Alert>
               )}
+
+              <QuickRepliesBar
+                businessId={businessId}
+                quickReplies={quickReplies}
+              />
+
               <WhatsAppReplyForm
                 businessId={businessId}
                 conversationId={conversationId}
@@ -140,7 +156,58 @@ export default async function WhatsAppConversationPage({ params }: { params: Pro
               />
             </>
           )}
+
+        <div className="pt-2 border-t border-zinc-100">
+          <dl className="grid gap-2 text-xs text-zinc-500 sm:grid-cols-2">
+            <div>
+              <span>Customer window: </span>
+              <Chip tone={readiness.windowOpen ? "success" : "danger"}>{readiness.windowOpen ? "Open" : "Closed"}</Chip>
+            </div>
+            <div>
+              <span>Monthly free tier: </span>
+              <span>{readiness.meterFree} remaining ({readiness.meterUsed} used)</span>
+            </div>
+          </dl>
+        </div>
       </section>
+
+      {/* Frontline Suite: Orders & Verification, Team Notes & Controls */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <div className="space-y-6">
+          <OrderCaptureCard
+            businessId={businessId}
+            conversationId={conversationId}
+            defaultCustomerName={conversation.customerName ?? ""}
+            defaultCustomerPhone={conversation.customerPhone}
+            existingOrders={orders.map((o) => ({
+              ...o,
+              totalGhs: Number(o.totalGhs),
+            }))}
+          />
+
+          <ReceiptInspector
+            businessId={businessId}
+            conversationId={conversationId}
+          />
+        </div>
+
+        <div className="space-y-6">
+          <ConversationNotes
+            businessId={businessId}
+            conversationId={conversationId}
+            currentUserId={user.id}
+            notes={notes}
+          />
+
+          <section aria-labelledby="control-heading" className="card space-y-3 p-4 sm:p-5">
+            <h2 id="control-heading" className="text-sm font-semibold text-zinc-900">Conversation Mode</h2>
+            {maySend && readiness.status !== "RESOLVED"
+              ? <WhatsAppModeControls businessId={businessId} conversationId={conversationId} mode={readiness.mode as "OWNER_ONLY" | "AI_ASSIST"} />
+              : readiness.status === "RESOLVED" ? <Alert tone="info">This conversation is resolved.</Alert> :
+                <Alert tone="info">Changing AI assistance is an owner/admin action.</Alert>}
+          </section>
+        </div>
+      </div>
     </div>
   );
 }

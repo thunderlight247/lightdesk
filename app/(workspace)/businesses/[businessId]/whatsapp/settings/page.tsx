@@ -3,11 +3,9 @@ import { notFound } from "next/navigation";
 import { Alert, Chip } from "@/components/ui/field";
 import { PageHeading } from "@/components/ui/card";
 import { WhatsAppConnectionSettings } from "@/components/whatsapp/connection-settings";
-import { PilotPanel } from "@/components/whatsapp/pilot-panel";
 import { orNotFound, requireUserForPage } from "@/lib/auth/guards";
 import { businessIdSchema } from "@/lib/validation/schemas";
 import { getSignupState } from "@/modules/whatsapp/onboarding";
-import { getPilotStatus, type PilotStatusView } from "@/modules/pilot/service";
 
 /**
  * M6d onboarding UX (spec §3.6, flow 2 "Settings"): connection status, token state,
@@ -20,7 +18,6 @@ export default async function WhatsAppSettingsPage({ params }: { params: Promise
   if (!parsed.success) notFound();
   const businessId = parsed.data;
   const state = await orNotFound(getSignupState(user.id, businessId));
-  const pilot: PilotStatusView = await orNotFound(getPilotStatus(user.id, businessId));
   const base = `/businesses/${businessId}/whatsapp`;
   const connected = state.existing?.status === "CONNECTED";
 
@@ -55,11 +52,8 @@ export default async function WhatsAppSettingsPage({ params }: { params: Promise
           />
         ) : (
           <Alert tone="info">
-            Meta signup is not configured on this server yet. The platform administrator must finish the Meta app setup
-            (Tech-provider app id, embedded-signup            configuration id and app secret in this server&apos;s environment — see
-            docs/m6-live-runbook.md). Until then a connection can be bound with
-            <code className="mx-1 rounded bg-zinc-100 px-1 py-0.5 text-xs">scripts/whatsapp-setup-connection.ts</code>.
-            {state.blockers.length > 0 && <span className="mt-2 block text-xs">Missing: {state.blockers.join(" ")}</span>}
+            Connecting your WhatsApp Business account is not set up on this server yet. Ask the LightDesk team to
+            complete the Meta app configuration; you will then be able to connect your number from this page.
           </Alert>
         )}
       </section>
@@ -74,7 +68,6 @@ export default async function WhatsAppSettingsPage({ params }: { params: Promise
         <p className="text-xs text-zinc-500">Only messages LightDesk actually sends count. Customer messages inbound to you are free; AI drafts pending review never count.</p>
       </section>
 
-      <PilotPanel businessId={businessId} status={pilot} canControl={state.isOwner} />
     </div>
   );
 }

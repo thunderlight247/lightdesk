@@ -28,7 +28,11 @@ export default async function BusinessLayout({
     { href: `${base}/profile`, label: "Profile" },
     { href: `${base}/lab`, label: "Lab" },
   ];
-  if (can(membership.role, "whatsapp:read")) items.push({ href: `${base}/whatsapp`, label: "WhatsApp" });
+  if (can(membership.role, "whatsapp:read")) {
+    items.push({ href: `${base}/whatsapp`, label: "WhatsApp" });
+    items.push({ href: `${base}/orders`, label: "Orders" });
+    items.push({ href: `${base}/analytics`, label: "Insights" });
+  }
   if (can(membership.role, "business:update")) items.push({ href: `${base}/settings`, label: "Settings" });
 
   return (

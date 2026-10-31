@@ -56,7 +56,7 @@ export async function regenerateAction(_p: ActionState, fd: FormData): Promise<A
 export async function approveDraftAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   return run(fd, async (u, b) => {
     const r = await approveDraft(u, b, id(fd, "conversationId"), id(fd, "messageId"), { editedText: fd.get("editedText") });
-    return r.edited ? "Edited reply approved for the simulation. Nothing was sent to any customer." : "Reply approved for the simulation. Nothing was sent to any customer.";
+    return r.edited ? "Edited reply approved for the test conversation. Nothing was sent to any customer." : "Reply approved for the test conversation. Nothing was sent to any customer.";
   });
 }
 

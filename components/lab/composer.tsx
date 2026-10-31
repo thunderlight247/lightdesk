@@ -44,7 +44,7 @@ export function Composer({
   return (
     <form ref={ref} action={action} className="card p-4 sm:p-5 space-y-4" aria-busy={pending}>
       <CardTitle
-        title="Simulate a customer enquiry"
+        title="Test a customer enquiry"
         subtitle="The assistant drafts a reply strictly from your approved business facts."
       />
       <input type="hidden" name="businessId" value={businessId} />

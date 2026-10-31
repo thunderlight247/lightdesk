@@ -13,7 +13,7 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
       </main>
       <footer className="border-t border-zinc-200/60 bg-white/50 py-6 text-center text-xs text-zinc-400">
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-          LightDesk · drafts are simulations until a live channel is connected and approved by the owner
+          LightDesk · test mode: AI drafts are sent only after owner approval
         </div>
       </footer>
     </div>

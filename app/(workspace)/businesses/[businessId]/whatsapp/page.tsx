@@ -89,6 +89,11 @@ export default async function WhatsAppInboxPage({ params }: { params: Promise<{ 
                   <Chip tone="brand">
                     {conversation.mode === "OWNER_ONLY" ? "Owner only" : "AI assist"}
                   </Chip>
+                  {conversation.assignedTo && (
+                    <Chip tone="neutral">
+                      👤 {conversation.assignedTo.name}
+                    </Chip>
+                  )}
                 </div>
                 <p className="truncate text-xs sm:text-sm text-zinc-600">
                   {conversation.lastMessageDirection === "OUTBOUND" ? "You: " : ""}{conversation.lastMessagePreview}

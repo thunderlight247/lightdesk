@@ -22,8 +22,8 @@ function wasmModuleForVitest(): Plugin {
     load(id) {
       if (!id.startsWith(VIRTUAL_PREFIX)) return null;
       const file = id.slice(VIRTUAL_PREFIX.length);
-      const bytes = JSON.stringify([...readFileSync(file)]);
-      return `export default new WebAssembly.Module(new Uint8Array(${bytes}));`;
+      const b64 = readFileSync(file).toString("base64");
+      return `export default new WebAssembly.Module(Buffer.from("${b64}", "base64"));`;
     },
   };
 }

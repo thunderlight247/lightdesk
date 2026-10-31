@@ -14,7 +14,7 @@ export default async function BusinessesPage() {
         title="Your businesses"
         lead={
           businesses.length > 0
-            ? "Select a business to enter its workspace, inspect profiles, and test simulated conversations."
+            ? "Select a business to enter its workspace, inspect profiles, and run test conversations."
             : "Workspaces you belong to will appear here."
         }
       />

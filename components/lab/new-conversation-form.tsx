@@ -19,7 +19,7 @@ export function NewConversationForm({ businessId }: { businessId: string }) {
       {state.error && <Alert>{state.error}</Alert>}
       {state.fieldErrors?.customerLabel?.map((e) => <Alert key={e}>{e}</Alert>)}
       <Field
-        label="Simulated customer name or label (optional)"
+        label="Test customer name or label (optional)"
         hint="e.g. “Ama (Kumasi)” or “Kwame”. Do not use real customer identities."
       >
         <Input name="customerLabel" maxLength={40} placeholder="e.g. Ama (Test Customer)" autoComplete="off" />

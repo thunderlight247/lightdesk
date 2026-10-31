@@ -15,7 +15,7 @@ export default async function BusinessOverviewPage({ params }: { params: Promise
     <div className="space-y-6">
       <PageHeading
         title="Overview"
-        lead="Manage business workspace profile, team members, conversation simulation lab, and channel integrations."
+        lead="Manage business workspace profile, team members, conversation test lab, and WhatsApp connection."
       />
 
       {/* Quick Action Navigation Grid */}
@@ -45,7 +45,7 @@ export default async function BusinessOverviewPage({ params }: { params: Promise
               <span className="text-zinc-400 group-hover:text-brand-600 group-hover:translate-x-0.5 transition-transform">→</span>
             </div>
             <span className="mt-1.5 block text-xs sm:text-sm text-zinc-500 leading-relaxed">
-              Simulate customer enquiries and inspect AI drafts against approved facts.
+              Test customer enquiries and inspect AI drafts against approved facts.
             </span>
           </Link>
         </li>

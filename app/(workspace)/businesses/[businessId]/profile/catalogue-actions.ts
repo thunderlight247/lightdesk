@@ -9,6 +9,7 @@ import {
   approveCatalogueItem,
   deleteCatalogueItem,
   saveCatalogueItem,
+  toggleCatalogueItemStock,
 } from "@/modules/catalogue/service";
 
 async function run(
@@ -69,6 +70,14 @@ export async function approveCatalogueItemAction(_p: ActionState, fd: FormData):
     const itemId = str(fd, "itemId");
     await approveCatalogueItem(userId, businessId, itemId);
     return "Catalogue item approved for use.";
+  });
+}
+
+export async function toggleCatalogueItemStockAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  return run(fd, async (userId, businessId) => {
+    const itemId = str(fd, "itemId");
+    const item = await toggleCatalogueItemStock(userId, businessId, itemId);
+    return `Item marked as ${item.inStock ? "in stock" : "out of stock"}.`;
   });
 }
 

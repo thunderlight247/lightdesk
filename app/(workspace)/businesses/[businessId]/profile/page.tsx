@@ -82,7 +82,7 @@ export default async function ProfileOverviewPage({ params }: { params: Promise<
 
       {/* Lifecycle Actions */}
       <section aria-labelledby="lifecycle" className="card p-4 sm:p-6 space-y-4">
-        <CardTitle title="Profile lifecycle" subtitle="Controls whether this profile is in draft mode, in review, or active in live simulations." />
+        <CardTitle title="Profile lifecycle" subtitle="Controls whether this profile is in draft mode, in review, or active." />
         {evaluation.blocking.length > 0 && status !== "ACTIVE" && (
           <Alert tone="info">
             <p className="font-semibold text-amber-900">Before this profile can be activated:</p>

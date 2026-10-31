@@ -11,7 +11,6 @@ import { CardTitle } from "@/components/ui/card";
 import { orNotFound, requireUserForPage } from "@/lib/auth/guards";
 import { businessIdSchema } from "@/lib/validation/schemas";
 import { getConversation, getLabReadiness } from "@/modules/lab/service";
-import { SIMULATION_NOTICE } from "@/modules/lab/types";
 import { deleteConversationAction, resolveAction } from "../actions";
 
 const CONV_ID = /^[a-z0-9]{10,40}$/;
@@ -57,14 +56,14 @@ export default async function ConversationPage({ params }: { params: Promise<{ b
                 {conv.title ?? "New test conversation"}
               </h1>
               <p className="mt-1 text-xs text-zinc-500">
-                Simulated customer: <strong className="font-semibold text-zinc-700">{conv.customerLabel}</strong> · started by {conv.createdByName} · {fmtDateTime(conv.createdAt)}
+                Test customer: <strong className="font-semibold text-zinc-700">{conv.customerLabel}</strong> · started by {conv.createdByName} · {fmtDateTime(conv.createdAt)}
               </p>
             </div>
             <ConversationStatusBadge status={conv.status} />
           </div>
 
           <Alert tone="info">
-            <span className="font-semibold">Test Sandbox: </span>{SIMULATION_NOTICE} Nothing in this conversation is delivered to WhatsApp or any live customer channel.
+            <span className="font-semibold">Test mode: </span>nothing in this conversation is delivered to WhatsApp or any customer.
           </Alert>
         </div>
       </div>
@@ -106,7 +105,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ b
       <ol aria-label="Transcript" className="space-y-4">
         {messages.length === 0 && (
           <li className="card border-dashed p-8 text-center text-sm text-zinc-500">
-            No messages yet. Type a simulated customer enquiry below to start testing.
+            No messages yet. Type a test customer enquiry below to start testing.
           </li>
         )}
 

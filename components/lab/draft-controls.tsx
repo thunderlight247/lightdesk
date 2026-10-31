@@ -28,7 +28,7 @@ export function ApproveDraftForm({ businessId, conversationId, messageId, draft 
           </span>
         </summary>
         <div className="mt-3 pt-3 border-t border-zinc-100">
-          <Field label="Revised wording for simulation" hint="Your edit is saved separately; the original AI draft is retained in audit logs.">
+          <Field label="Revised wording for test conversation" hint="Your edit is saved separately; the original AI draft is retained in audit logs.">
             <Textarea name="editedText" rows={3} maxLength={1200} defaultValue={draft} />
           </Field>
         </div>
@@ -39,7 +39,7 @@ export function ApproveDraftForm({ businessId, conversationId, messageId, draft 
           {pending ? "Approving…" : "Approve reply"}
         </Button>
         <span className="text-xs text-zinc-500">
-          Applies to this test simulation only.
+          Applies to this test conversation only.
         </span>
       </div>
     </form>
